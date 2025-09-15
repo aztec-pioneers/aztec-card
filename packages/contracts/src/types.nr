@@ -1,1 +1,4 @@
-pub(crate) mod definition_note;
+pub(crate) mod config_note;
+pub(crate) mod spent_amount_epoch_note;
+pub(crate) mod timelock;
+pub(crate) mod timelocked_note;

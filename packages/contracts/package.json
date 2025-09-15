@@ -1,5 +1,5 @@
 {
-  "name": "@aztec-otc-desk/contracts",
+  "name": "@aztec-card/contracts",
   "devDependencies": {
       "@types/bun": "catalog:",
       "@types/jest": "catalog:",
