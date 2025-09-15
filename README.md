@@ -1,4 +1,4 @@
-# aztec-otc-desk
+# aztec-card
 
 To install dependencies:
 

@@ -1,7 +1,7 @@
 use aztec::macros::aztec;
 
 pub mod types;
-// pub mod test;
+pub mod test;
 
 #[aztec]
 pub contract CardEscrow {
@@ -9,20 +9,19 @@ pub contract CardEscrow {
     use aztec::{
         context::PrivateContext,
         macros::{
-            functions::{initializer, private, utility, public, internal},
+            functions::{initializer, private, public, internal, utility},
             storage::storage
         },
         prelude::{
             AztecAddress,
-            PrivateImmutable,
-            PrivateMutable,
-            PublicImmutable,
             PublicMutable,
+            PrivateMutable,
             Map
         },
         messages::logs::note::encode_and_encrypt_note,
         protocol_types::traits::ToField,
     };
+    use token_contract::Token;
     use crate::types::{
         config_note::ConfigNote,
         timelock::Timelock,
@@ -32,10 +31,6 @@ pub contract CardEscrow {
 
     // number of blocks that must elapse for a timelock
     global TIMELOCK_BLOCKS: u32 = 30;
-
-    use token_contract::Token;
-
-    // todo: can we enforce existence of a private note?
 
     #[storage]
     struct Storage<Context> {
@@ -222,6 +217,8 @@ pub contract CardEscrow {
             ));
     }
 
+    // todo: we should make this a delayed public mutable so that we can change it in one tx?
+
     #[private]
     fn change_spend_limit(new_spend_limit: u128) {
         let caller = context.msg_sender();
@@ -377,6 +374,11 @@ pub contract CardEscrow {
         
         // return the spend cap
         config.spend_limit
+    }
+
+    #[utility]
+    pub unconstrained fn get_config() -> ConfigNote {
+        storage.config.view_note()
     }
 
 }

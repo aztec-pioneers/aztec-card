@@ -1,12 +1,11 @@
 use crate::{
-    OTCEscrowContract,
+    CardEscrow,
     test::utils::token::mint_to_private,
 };
 use token_contract::Token;
 use aztec::{
     prelude::AztecAddress,
     oracle::random::random,
-    protocol_types::contract_instance::ContractInstance,
     test::helpers::{
         test_environment::TestEnvironment,
         cheatcodes
@@ -18,29 +17,20 @@ pub global USDC_NAME: str<31> = "USD Coin\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\
 pub global USDC_SYMBOL: str<31> = "USDC\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n";
 pub global USDC_DECIMALS: u8 = 6;
 
-pub global ETH_NAME: str<31> = "Ether\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n";
-pub global ETH_SYMBOL: str<31> = "ETH\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n";
-pub global ETH_DECIMALS: u8 = 18;
-
-pub global USDC_ESCROW_AMOUNT: u128 = (1000 * 10.pow_32(6)) as u128;
-pub global ETH_ESCROW_AMOUNT: u128 = (1 * 10.pow_32(18)) as u128;
-
-// pub global USDC_ESCROW_AMOUNT: u128 = 1;
-// pub global ETH_ESCROW_AMOUNT: u128 = 1;
+pub global USDC_MINT_AMOUNT: u128 = (10000 * 10.pow_32(6)) as u128;
+pub global INITIAL_SPEND_LIMIT: u128 = (1000 * 10.pow_32(6)) as u128;
 
 // Named structs for easy readability
 pub struct TestAccounts {
     minter: AztecAddress,
-    seller: AztecAddress,
-    buyer: AztecAddress,
-    external: AztecAddress,
+    user: AztecAddress,
+    operator: AztecAddress,
     escrow_secret: Field
 }
 
 pub struct TestContracts {
     usdc: AztecAddress,
-    eth: AztecAddress,
-    escrow: AztecAddress,
+    card_escrow: AztecAddress,
 }
 
 /**
@@ -59,12 +49,11 @@ pub unconstrained fn setup(mint: bool) -> (
 ) {
     // setup accounts
     let mut env = TestEnvironment::new();
-    let accounts = setup_accounts::<4>(&mut env);
+    let accounts = setup_accounts::<3>(&mut env);
     let mut test_accounts = TestAccounts {
         minter: accounts[0],
-        seller: accounts[1],
-        buyer: accounts[2],
-        external: accounts[3],
+        user: accounts[1],
+        operator: accounts[2],
         escrow_secret: 0
     };
 
@@ -76,20 +65,13 @@ pub unconstrained fn setup(mint: bool) -> (
         USDC_SYMBOL,
         USDC_DECIMALS
     );
-    let eth = deploy_token_contract(
+    
+    let (card_escrow, escrow_secret) = deploy_card_escrow_contract(
         &mut env,
-        test_accounts.minter,
-        ETH_NAME,
-        ETH_SYMBOL,
-        ETH_DECIMALS
-    );
-    let (escrow, escrow_secret) = deploy_escrow_contract(
-        &mut env,
-        test_accounts.seller,
+        test_accounts.user,
         usdc,
-        USDC_ESCROW_AMOUNT,
-        eth,
-        ETH_ESCROW_AMOUNT
+        test_accounts.operator,
+        INITIAL_SPEND_LIMIT
     );
     // mint to accounts
     if (mint) {
@@ -97,19 +79,12 @@ pub unconstrained fn setup(mint: bool) -> (
             &mut env,
             usdc,
             test_accounts.minter,
-            test_accounts.seller,
-            USDC_ESCROW_AMOUNT
-        );
-        mint_to_private(
-            &mut env,
-            eth,
-            test_accounts.minter,
-            test_accounts.buyer,
-            ETH_ESCROW_AMOUNT
+            test_accounts.user,
+            USDC_MINT_AMOUNT
         );
     }
     // named contract struct 
-    let test_contracts = TestContracts { usdc, eth, escrow };
+    let test_contracts = TestContracts { usdc, card_escrow };
     test_accounts.escrow_secret = escrow_secret;
 
     (&mut env, test_accounts, test_contracts)
@@ -149,29 +124,28 @@ pub unconstrained fn deploy_token_contract(
     contract_instance.to_address()
 }
 
-pub unconstrained fn deploy_escrow_contract(
+pub unconstrained fn deploy_card_escrow_contract(
     env: &mut TestEnvironment,
-    owner: AztecAddress,
-    sell_token_address: AztecAddress,
-    sell_token_amount: u128,
-    buy_token_address: AztecAddress,
-    buy_token_amount: u128
+    user: AztecAddress,
+    token: AztecAddress,
+    operator: AztecAddress,
+    spend_limit: u128
+    
 ) -> (AztecAddress, Field) {
     // setup keys for escrow account
     let escrow_secret = unsafe { random() };
     let escrow_contract_account = cheatcodes::add_account(escrow_secret);
 
     // deploy escrow contract
-    let initializer_call_interface = OTCEscrowContract::interface()
+    let initializer_call_interface = CardEscrow::interface()
         .constructor(
-            sell_token_address,
-            sell_token_amount,
-            buy_token_address,
-            buy_token_amount
+            token,
+            operator,
+            spend_limit
         );
     let contract_instance = env
-        .deploy_self_with_public_keys("OTCEscrowContract", escrow_secret)
-        .with_private_initializer(owner, initializer_call_interface);
+        .deploy_self_with_public_keys("CardEscrow", escrow_secret)
+        .with_private_initializer(user, initializer_call_interface);
     env.advance_block_by(1);
 
     (contract_instance.to_address(), escrow_secret)

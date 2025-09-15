@@ -1,4 +1,4 @@
-# Aztec OTC Escrow Contracts
+# Aztec Card Escrow Contract
 
 To install dependencies:
 
