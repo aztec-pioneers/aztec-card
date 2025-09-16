@@ -5,7 +5,6 @@ pub mod test;
 
 #[aztec]
 pub contract CardEscrow {
-    // aztec library imports
     use aztec::{
         context::PrivateContext,
         macros::{
@@ -443,7 +442,4 @@ pub contract CardEscrow {
     pub unconstrained fn get_timelocks_private() -> TimelockedNote {
         storage.timelocks_private.view_note()
     }
-
-
-
 }
