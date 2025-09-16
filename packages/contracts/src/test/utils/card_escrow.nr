@@ -79,18 +79,11 @@ pub unconstrained fn spend_from_escrow(
     card_escrow_address: AztecAddress,
     amount: u128,
     epoch: Field,
-    first_in_epoch: bool
 ) {
     env.impersonate(operator_address);
-    if first_in_epoch {
-        CardEscrow::at(card_escrow_address)
-            .spend_first_in_epoch(amount, epoch)
-            .call(&mut env.private());
-    } else {
-        CardEscrow::at(card_escrow_address)
-            .spend_subsequent_in_epoch(amount, epoch)
-            .call(&mut env.private());
-    }
+    CardEscrow::at(card_escrow_address)
+        .spend(amount, epoch)
+        .call(&mut env.private());
     env.advance_block_by(1);
 }
 

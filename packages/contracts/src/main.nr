@@ -12,11 +12,17 @@ pub contract CardEscrow {
             functions::{initializer, private, public, internal, utility, view},
             storage::storage
         },
+        oracle::notes::check_nullifier_exists,
         prelude::{
             AztecAddress,
             PublicMutable,
             PrivateMutable,
             Map
+        },
+        protocol_types::{
+            storage::map::derive_storage_slot_in_map,
+            constants::GENERATOR_INDEX__INITIALIZATION_NULLIFIER,
+            hash::poseidon2_hash_with_separator
         },
         messages::logs::note::encode_and_encrypt_note,
     };
@@ -28,8 +34,7 @@ pub contract CardEscrow {
         spent_amount_epoch_note::SpentAmountEpochNote,
     };
 
-    // number of blocks that must elapse for a timelock
-    pub global TIMELOCK_BLOCKS: u32 = 30;
+    pub global TIMELOCK_BLOCKS: u32 = 30; // number of blocks that must elapse for a timelock
     pub global EPOCH_LENGTH: u64 = 86400; // seconds in a day
 
     #[storage]
@@ -176,60 +181,56 @@ pub contract CardEscrow {
     }
 
 
-    // separate because we can't read a note if it doesnt exist
-    // will fail when initialize is called if not the first note
     #[private]
-    fn spend_first_in_epoch(amount: u128, epoch: Field) {
-        // common spend logic
-        let spending_limit = _spend(&mut context, storage.config, amount, epoch);
+    fn spend(amount: u128, epoch: Field) {
+        let caller = context.msg_sender();
+        let self_address = context.this_address();
 
-        // check the spend amount agains the limit
-        assert(spending_limit >= amount, "Spend limit exceeded!");
-
-        // create the spent amount epoch note
-        let spent_amount_epoch_note = SpentAmountEpochNote::new(
+        // authorize this call
+        let config = get_config_and_reemit(&mut context, storage.config);
+        assert(config.operator_address == caller, "Unauthorized: not card operator!");
+        
+        // check epoch note has been initialized and create/ update it
+        let is_initialized = unsafe { check_spend_epoch_initialized(epoch) };
+        let mut spend_amount_epoch_note = SpentAmountEpochNote::new(
             context.this_address(),
             amount,
         );
-
-        storage
-            .spend_epoch
-            .at(epoch)
-            .initialize(spent_amount_epoch_note)
-            .emit(encode_and_encrypt_note(
-                &mut context,
-                context.this_address(),
-                context.this_address()
-            ));
-    }
-
-    #[private]
-    fn spend_subsequent_in_epoch(amount: u128, epoch: Field) {
-        // common spend logic
-        let spending_limit = _spend(&mut context, storage.config, amount, epoch);
-
-        // get the existing epoch note
-        let mut spent_amount_epoch_note = storage
-            .spend_epoch
-            .at(epoch)
-            .get_note()
-            .note;
+        if is_initialized {
+            let existing_note = storage.spend_epoch.at(epoch).get_note().note;
+            spend_amount_epoch_note.spent_amount += existing_note.spent_amount;
+        }
 
         // check the spend amount against the limit
-        let new_spent_amount = spent_amount_epoch_note.spent_amount + amount;
-        assert(spending_limit >= new_spent_amount, "Spend limit exceeded!");
+        assert(
+            config.spend_limit >= spend_amount_epoch_note.spent_amount,
+            "Spend limit exceeded!"
+        );
 
-        // update the spent amount epoch note
-        spent_amount_epoch_note.spent_amount = new_spent_amount;
+        // store the note
         storage
             .spend_epoch
             .at(epoch)
-            .replace(spent_amount_epoch_note)
+            .initialize_or_replace(spend_amount_epoch_note)
             .emit(encode_and_encrypt_note(
                 &mut context,
                 context.this_address(),
                 context.this_address()
             ));
+
+        // transfer the tokens out
+        Token::at(config.token_address)
+            .transfer_private_to_private(
+                self_address,
+                caller,
+                amount,
+                0
+            )
+            .call(&mut context);
+        // enqueue a check to make sure the asserted epoch is correct
+        CardEscrow::at(self_address)
+            .check_epoch(epoch)
+            .enqueue(&mut context);
     }
 
     // todo: we should make this a delayed public mutable so that we can change it in one tx?
@@ -387,7 +388,7 @@ pub contract CardEscrow {
     #[internal]
     fn check_epoch(asserted_epoch: Field) {
         let timestamp = context.timestamp();
-        let current_epoch = (timestamp as Field / 86400) as Field;
+        let current_epoch = (timestamp / EPOCH_LENGTH) as Field;
         assert(current_epoch == asserted_epoch, "Epoch mismatch!");
     }
     
@@ -418,35 +419,19 @@ pub contract CardEscrow {
     }
 
     #[contract_library_method]
-    fn _spend(
-        context: &mut PrivateContext,
-        config_storage: PrivateMutable<ConfigNote, &mut PrivateContext>,
-        amount: u128,
+    unconstrained fn check_spend_epoch_initialized(
         epoch: Field
-    ) -> u128 {
-        let caller = context.msg_sender();
-        let self_address = context.this_address();
-
-        // authorize this call
-        let config = get_config_and_reemit(context, config_storage);
-        assert(config.operator_address == caller, "Unauthorized: not card operator!");
-
-        // transfer the tokens out
-        Token::at(config.token_address)
-            .transfer_private_to_private(
-                self_address,
-                caller,
-                amount,
-                0
-            )
-            .call(context);
-        // enqueue a check to make sure the asserted epoch is correct
-        CardEscrow::at(self_address)
-            .check_epoch(epoch)
-            .enqueue(context);
-        
-        // return the spend cap
-        config.spend_limit
+    ) -> bool {
+        // get the slot the spent amount epoch note would be stored at
+        let map_slot = CardEscrow::storage_layout().spend_epoch.slot;
+        let epoch_slot = derive_storage_slot_in_map(map_slot, epoch);
+        // compute the initialization nullifier
+        let nullifier = poseidon2_hash_with_separator(
+            [epoch_slot],
+            GENERATOR_INDEX__INITIALIZATION_NULLIFIER,
+        );
+        // check with oracle call if it exists and return
+        unsafe { check_nullifier_exists(nullifier) }
     }
 
     #[utility]

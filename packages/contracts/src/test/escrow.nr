@@ -7,10 +7,7 @@ use crate::{
     }
 };
 use aztec::{
-    oracle::{
-        execution::get_block_number,
-        debug_log::debug_log_format,
-    },
+    oracle::execution::get_block_number,
     test::helpers::cheatcodes
 };
 
@@ -52,7 +49,6 @@ unconstrained fn test_e2e() {
         contracts.card_escrow,
         INITIAL_SPEND_LIMIT / 2,
         epoch,
-        true // first spend in this epoch
     );
     expect_private_balance(contracts.usdc, contracts.card_escrow, USDC_MINT_AMOUNT - (INITIAL_SPEND_LIMIT / 2));
     expect_private_balance(contracts.usdc, accounts.operator, INITIAL_SPEND_LIMIT / 2);
@@ -62,7 +58,6 @@ unconstrained fn test_e2e() {
         contracts.card_escrow,
         INITIAL_SPEND_LIMIT / 2,
         epoch,
-        false // subsequent spend in this epoch
     );
     expect_private_balance(contracts.usdc, contracts.card_escrow, USDC_MINT_AMOUNT - INITIAL_SPEND_LIMIT);
     expect_private_balance(contracts.usdc, accounts.operator, INITIAL_SPEND_LIMIT);
@@ -78,7 +73,6 @@ unconstrained fn test_e2e() {
         contracts.card_escrow,
         INITIAL_SPEND_LIMIT,
         epoch,
-        true // subsequent spend in this epoch
     );
     expect_private_balance(contracts.usdc, contracts.card_escrow, USDC_MINT_AMOUNT - (INITIAL_SPEND_LIMIT * 2));
     expect_private_balance(contracts.usdc, accounts.operator, INITIAL_SPEND_LIMIT * 2);
@@ -128,7 +122,6 @@ unconstrained fn test_overspend_limit_1_tx_fail() {
         contracts.card_escrow,
         INITIAL_SPEND_LIMIT + 1,
         epoch,
-        true // subsequent spend in this epoch
     );
 }
 
@@ -157,7 +150,6 @@ unconstrained fn test_overspend_limit_2_tx_fail() {
         contracts.card_escrow,
         INITIAL_SPEND_LIMIT,
         epoch,
-        true // subsequent spend in this epoch
     );
 
     // try to overspend by a single unit
@@ -167,7 +159,6 @@ unconstrained fn test_overspend_limit_2_tx_fail() {
         contracts.card_escrow,
         1,
         epoch,
-        false // subsequent spend in this epoch
     );
 }
 
@@ -213,7 +204,6 @@ unconstrained fn test_switch_spend_limit() {
         contracts.card_escrow,
         INITIAL_SPEND_LIMIT * 2,
         epoch,
-        true // first spend in this epoch
     );
     expect_private_balance(contracts.usdc, contracts.card_escrow, USDC_MINT_AMOUNT - (INITIAL_SPEND_LIMIT * 2));
     expect_private_balance(contracts.usdc, accounts.operator, INITIAL_SPEND_LIMIT * 2);
@@ -261,7 +251,6 @@ unconstrained fn test_switch_spend_limit_down_fail() {
         contracts.card_escrow,
         INITIAL_SPEND_LIMIT,
         epoch,
-        true // first spend in this epoch
     );
 }
 
@@ -297,7 +286,6 @@ unconstrained fn test_spend_with_pending_withdraw() {
         contracts.card_escrow,
         INITIAL_SPEND_LIMIT,
         epoch,
-        true // first spend in this epoch
     );
     // advance past timelock 
     cheatcodes::advance_blocks_by(CardEscrow::TIMELOCK_BLOCKS);
@@ -348,7 +336,6 @@ unconstrained fn test_spend_pending_limt_change() {
         contracts.card_escrow,
         INITIAL_SPEND_LIMIT,
         epoch,
-        true // first spend in this epoch
     );
 
     // advance past timelock
@@ -421,7 +408,6 @@ unconstrained fn test_spend_more_than_available_fail() {
         contracts.card_escrow,
         INITIAL_SPEND_LIMIT,
         epoch,
-        true // first spend in this epoch
     );
 
     // advance epoch
@@ -435,7 +421,6 @@ unconstrained fn test_spend_more_than_available_fail() {
         contracts.card_escrow,
         INITIAL_SPEND_LIMIT,
         epoch,
-        true // first spend in this epoch
     );
 }
 
@@ -500,7 +485,6 @@ unconstrained fn test_cannot_spend_wrong_epoch() {
         contracts.card_escrow,
         INITIAL_SPEND_LIMIT,
         epoch,
-        true // first spend in this epoch
     );
 }
 
@@ -814,6 +798,5 @@ unconstrained fn test_cannot_spend_not_operator_fail() {
         contracts.card_escrow,
         INITIAL_SPEND_LIMIT,
         epoch,
-        true // first spend in this epoch
     );
 }
