@@ -9,14 +9,14 @@ use aztec::{
 #[derive(Eq, Serialize, Deserialize)]
 pub struct EscrowNonceNote {
     owner: AztecAddress,
-    nonce: u128,
+    nonce: Field,
     randomness: Field,
 }
 
 impl EscrowNonceNote {
     pub fn new(
         owner: AztecAddress,
-        nonce: u128,
+        nonce: Field,
     ) -> Self {
         EscrowNonceNote {
             owner,

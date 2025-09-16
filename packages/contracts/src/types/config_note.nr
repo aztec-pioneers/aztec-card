@@ -38,7 +38,7 @@ impl ConfigNote {
         }
     }
 
-    pub fn operator_schnorr_pubkey(&self) -> EmbeddedCurvePoint {
+    pub fn operator_schnorr_pubkey(self) -> EmbeddedCurvePoint {
         EmbeddedCurvePoint {
             x: self.operator_pubkey_x,
             y: self.operator_pubkey_y,

@@ -143,6 +143,8 @@ pub unconstrained fn deploy_card_escrow_contract(
         .constructor(
             token,
             operator,
+            0, // fake pubkeys since this cant be tested in txe
+            0, // fake pubkeys since this cant be tested in txe
             spend_limit
         );
     let contract_instance = env

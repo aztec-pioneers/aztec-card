@@ -22,10 +22,12 @@ pub contract CardEscrow {
         protocol_types::{
             storage::map::derive_storage_slot_in_map,
             constants::GENERATOR_INDEX__INITIALIZATION_NULLIFIER,
-            hash::poseidon2_hash_with_separator
+            hash::poseidon2_hash_with_separator,
+            traits::ToField,
         },
         messages::logs::note::encode_and_encrypt_note,
     };
+    use poseidon::poseidon2::Poseidon2;
     use token_contract::Token;
     use crate::types::{
         config_note::ConfigNote,
@@ -38,6 +40,8 @@ pub contract CardEscrow {
 
     pub global TIMELOCK_BLOCKS: u32 = 30; // number of blocks that must elapse for a timelock
     pub global EPOCH_LENGTH: u64 = 86400; // seconds in a day
+    pub global WITHDRAW_SIG_SEPARATOR: Field = 1;
+    pub global SPEND_LIMIT_SIG_SEPARATOR: Field = 2;
 
     #[storage]
     struct Storage<Context> {
@@ -58,6 +62,8 @@ pub contract CardEscrow {
     fn constructor(
         token_address: AztecAddress,
         operator_address: AztecAddress,
+        operator_pubkey_x: Field,
+        operator_pubkey_y: Field,
         spend_limit: u128
     ) {
         let self_address = context.this_address();
@@ -67,8 +73,10 @@ pub contract CardEscrow {
         let config = ConfigNote::new(
             self_address,
             token_address,
-            operator_address,
             caller,
+            operator_address,
+            operator_pubkey_x,
+            operator_pubkey_y,
         );
         storage.config.initialize(config).emit(encode_and_encrypt_note(
             &mut context,
@@ -148,6 +156,64 @@ pub contract CardEscrow {
         CardEscrow::at(self_address)
             ._set_timelock(false, true)
             .enqueue(&mut context);
+    }
+
+    #[private]
+    fn withdraw_by_signature(amount: u128, signature: [u8; 64]) {
+        let caller = context.msg_sender();
+        let self_address = context.this_address();
+
+        // authorize this call
+        let config = storage.config.get_note();
+        assert(config.user_address == caller, "Unauthorized: not card user!");
+
+        // get the escrow nonce
+        let mut escrow_nonce_note = storage.escrow_nonce.get_note().note;
+
+        // authenticate the signature
+        let preimage = [
+            context.this_address().to_field(),
+            amount as Field,
+            escrow_nonce_note.nonce,
+            WITHDRAW_SIG_SEPARATOR
+        ];
+        let payload: [u8; 32] = Poseidon2::hash(preimage, 4).to_le_bytes();
+        schnorr::verify_signature(
+            config.operator_schnorr_pubkey(),
+            signature,
+            payload
+        );
+
+        // check no pending spend limit change or withdrawal
+        let timelock_note_emission = storage.timelocks_private.get_note();
+        timelock_note_emission.emit(encode_and_encrypt_note(
+            &mut context,
+            self_address,
+            self_address
+        ));
+        assert(
+            (timelock_note_emission.note.proposed_spend_limit == 0)
+            & (timelock_note_emission.note.proposed_withdraw_amount == 0),
+            "Cannot change spend limit by signature while any timelock is active!"
+        );
+
+        // bump the escrow nonce
+        escrow_nonce_note.nonce += 1;
+        storage.escrow_nonce.replace(escrow_nonce_note).emit(encode_and_encrypt_note(
+            &mut context,
+            self_address,
+            self_address
+        ));
+
+        // transfer tokens out unilaterally
+        Token::at(config.token_address)
+            .transfer_private_to_private(
+                self_address,
+                caller,
+                amount,
+                0
+            )
+            .call(&mut context);
     }
 
     #[private]
@@ -256,7 +322,65 @@ pub contract CardEscrow {
             .enqueue(&mut context);
     }
 
-    // todo: we should make this a delayed public mutable so that we can change it in one tx?
+    #[private]
+    fn change_spend_limit_by_signature(
+        new_spend_limit: u128,
+        signature: [u8; 64]
+    ) {
+        let caller = context.msg_sender();
+        let self_address = context.this_address();
+
+        // authorize this call
+        let config = storage.config.get_note();
+        assert(config.user_address == caller, "Unauthorized: not card operator!");
+
+        // get the escrow nonce
+        let mut escrow_nonce_note = storage.escrow_nonce.get_note().note;
+
+        // authenticate the signature
+        let preimage = [
+            context.this_address().to_field(),
+            new_spend_limit as Field,
+            escrow_nonce_note.nonce,
+            SPEND_LIMIT_SIG_SEPARATOR
+        ];
+        let payload: [u8; 32] = Poseidon2::hash(preimage, 4).to_le_bytes();
+        schnorr::verify_signature(
+            config.operator_schnorr_pubkey(),
+            signature,
+            payload
+        );
+
+        // bump the escrow nonce
+        escrow_nonce_note.nonce += 1;
+        storage.escrow_nonce.replace(escrow_nonce_note).emit(encode_and_encrypt_note(
+            &mut context,
+            self_address,
+            self_address
+        ));
+
+        // check no pending spend limit change or withdrawal
+        let timelock_note_emission = storage.timelocks_private.get_note();
+        timelock_note_emission.emit(encode_and_encrypt_note(
+            &mut context,
+            self_address,
+            self_address
+        ));
+        assert(
+            (timelock_note_emission.note.proposed_spend_limit == 0)
+            & (timelock_note_emission.note.proposed_withdraw_amount == 0),
+            "Cannot change spend limit by signature while any timelock is active!"
+        );
+
+        // update the spend limit unilaterally
+        let mut spend_limit_note = storage.spend_limit.get_note().note;
+        spend_limit_note.amount = new_spend_limit;
+        storage.spend_limit.replace(spend_limit_note).emit(encode_and_encrypt_note(
+            &mut context,
+            self_address,
+            self_address
+        ));
+    }
 
     #[private]
     fn change_spend_limit(new_spend_limit: u128) {
@@ -352,6 +476,24 @@ pub contract CardEscrow {
         CardEscrow::at(self_address)
             ._cancel_timelock(spend_limit, withdraw)
             .enqueue(&mut context);
+    }
+
+    #[private]
+    fn bump_escrow_nonce() {
+        let self_address = context.this_address();
+        let caller = context.msg_sender();
+        // authorize this call
+        let config = storage.config.get_note();
+        assert(config.operator_address == caller, "Unauthorized: not card user!");
+
+        // bump the nonce
+        let mut escrow_nonce_note = storage.escrow_nonce.get_note().note;
+        escrow_nonce_note.nonce += 1;
+        storage.escrow_nonce.replace(escrow_nonce_note).emit(encode_and_encrypt_note(
+            &mut context,
+            self_address,
+            self_address
+        ));
     }
 
     ////////////////////////////
