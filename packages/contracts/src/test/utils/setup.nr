@@ -25,6 +25,7 @@ pub struct TestAccounts {
     minter: AztecAddress,
     user: AztecAddress,
     operator: AztecAddress,
+    external: AztecAddress,
     escrow_secret: Field
 }
 
@@ -49,11 +50,12 @@ pub unconstrained fn setup(mint: bool) -> (
 ) {
     // setup accounts
     let mut env = TestEnvironment::new();
-    let accounts = setup_accounts::<3>(&mut env);
+    let accounts = setup_accounts::<4>(&mut env);
     let mut test_accounts = TestAccounts {
         minter: accounts[0],
         user: accounts[1],
         operator: accounts[2],
+        external: accounts[3],
         escrow_secret: 0
     };
 

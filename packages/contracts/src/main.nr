@@ -9,7 +9,7 @@ pub contract CardEscrow {
     use aztec::{
         context::PrivateContext,
         macros::{
-            functions::{initializer, private, public, internal, utility},
+            functions::{initializer, private, public, internal, utility, view},
             storage::storage
         },
         prelude::{
@@ -18,9 +18,7 @@ pub contract CardEscrow {
             PrivateMutable,
             Map
         },
-        oracle::debug_log::{debug_log, debug_log_format},
         messages::logs::note::encode_and_encrypt_note,
-        protocol_types::traits::ToField,
     };
     use token_contract::Token;
     use crate::types::{
@@ -32,6 +30,7 @@ pub contract CardEscrow {
 
     // number of blocks that must elapse for a timelock
     pub global TIMELOCK_BLOCKS: u32 = 30;
+    pub global EPOCH_LENGTH: u64 = 86400; // seconds in a day
 
     #[storage]
     struct Storage<Context> {
@@ -89,7 +88,7 @@ pub contract CardEscrow {
 
         // authorize this call
         let config = get_config_and_reemit(&mut context, storage.config);
-        assert(config.user_address == caller, "Unauthorized: not card user");
+        assert(config.user_address == caller, "Unauthorized: not card user!");
 
         // transfer tokens in
         Token::at(config.token_address)
@@ -109,7 +108,7 @@ pub contract CardEscrow {
 
         // authorize this call
         let config = get_config_and_reemit(&mut context, storage.config);
-        assert(config.user_address == caller, "Unauthorized: not card user");
+        assert(config.user_address == caller, "Unauthorized: not card user!");
 
         // update the timelocked note
         let mut timelocked_note = storage.timelocks_private.get_note().note;
@@ -122,22 +121,35 @@ pub contract CardEscrow {
 
         // publicly enqueue the timelock
         CardEscrow::at(self_address)
-            .set_withdraw_timelock()
+            ._set_timelock(false, true)
             .enqueue(&mut context);
     }
 
     #[private]
-    fn withdraw() {
+    fn withdraw(amount: u128) {
         let caller = context.msg_sender();
         let self_address = context.this_address();
 
         // authorize this call
         let config = get_config_and_reemit(&mut context, storage.config);
-        assert(config.user_address == caller, "Unauthorized: not card user");
+        assert(config.user_address == caller, "Unauthorized: not card user!");
 
         // get the amount to transfer from the timelocked note
         let mut timelocked_note = storage.timelocks_private.get_note().note;
-        let amount = timelocked_note.proposed_withdraw_amount;
+        let mut amount_to_withdraw = timelocked_note.proposed_withdraw_amount;
+
+        // check there is a pending withdrawal
+        // NOTE: should we remove this? all you can do is withdraw 0...
+        assert(amount_to_withdraw != 0, "No withdrawal has been scheduled!");
+
+        // handle withdrawing less than timelocked amount
+        if amount > 0 {
+            assert(
+                amount <= amount_to_withdraw,
+                "Requested withdraw amount exceeds proposed withdraw amount!"
+            );
+            amount_to_withdraw = amount;
+        }
 
         // reset the timelock note
         timelocked_note.proposed_withdraw_amount = 0;
@@ -152,14 +164,14 @@ pub contract CardEscrow {
             .transfer_private_to_private(
                 self_address,
                 caller,
-                amount,
+                amount_to_withdraw,
                 0
             )
             .call(&mut context);
 
         // enqueue public check that timelock is elapsed
         CardEscrow::at(self_address)
-            .elapse_withdraw_timelock()
+            ._elapse_timelock(false, true)
             .enqueue(&mut context);
     }
 
@@ -228,8 +240,8 @@ pub contract CardEscrow {
         let self_address = context.this_address();
 
         // authorize this call
-        let config = storage.config.get_note().note;
-        assert(config.user_address == caller, "Unauthorized: not card user");
+        let config = get_config_and_reemit(&mut context, storage.config);
+        assert(config.user_address == caller, "Unauthorized: not card user!");
 
         // update the timelocked note
         let mut timelocked_note = storage.timelocks_private.get_note().note;
@@ -242,7 +254,7 @@ pub contract CardEscrow {
 
         // publicly enqueue the timelock
         CardEscrow::at(self_address)
-            .set_spend_limit_timelock()
+            ._set_timelock(true, false)
             .enqueue(&mut context);
     }
 
@@ -252,11 +264,20 @@ pub contract CardEscrow {
         let self_address = context.this_address();
 
         // authorize this call
+        // DO NOT USE `get_config_and_reemit` UTILITY HERE SINCE WE MUTATE IT
         let mut config = storage.config.get_note().note;
-        assert(config.user_address == caller, "Unauthorized: not card user");
+        assert(
+            (config.user_address == caller)
+            | (config.operator_address == caller),
+            "Unauthorized: not card user or operator!"
+        );
+
+        // check that a spend limit change has been scheduled
+        let mut timelocked_note = storage.timelocks_private.get_note().note;
+        let proposed_spend_limit = timelocked_note.proposed_spend_limit;
+        assert(proposed_spend_limit != 0, "No spend limit change has been scheduled!");
 
         // update the spend limit
-        let mut timelocked_note = storage.timelocks_private.get_note().note;
         config.spend_limit = timelocked_note.proposed_spend_limit;
         storage.config.replace(config).emit(encode_and_encrypt_note(
             &mut context,
@@ -274,7 +295,36 @@ pub contract CardEscrow {
 
         // enqueue public check that timelock is elapsed
         CardEscrow::at(self_address)
-            .elapse_spend_limit_timelock()
+            ._elapse_timelock(true, false)
+            .enqueue(&mut context);
+    }
+
+    #[private]
+    fn cancel_timelocks(spend_limit: bool, withdraw: bool) {
+        let caller = context.msg_sender();
+        let self_address = context.this_address();
+
+        // authorize this call
+        let mut config = storage.config.get_note().note;
+        assert(config.user_address == caller, "Unauthorized: not card user!");
+
+        // reset the timelock note
+        let mut timelocked_note = storage.timelocks_private.get_note().note;
+        if spend_limit {
+            timelocked_note.proposed_spend_limit = 0;
+        }
+        if withdraw {
+            timelocked_note.proposed_withdraw_amount = 0;
+        }
+        storage.timelocks_private.replace(timelocked_note).emit(encode_and_encrypt_note(
+            &mut context,
+            self_address,
+            self_address
+        ));
+
+        // reset the public timelock
+        CardEscrow::at(self_address)
+            ._cancel_timelock(spend_limit, withdraw)
             .enqueue(&mut context);
     }
 
@@ -284,53 +334,52 @@ pub contract CardEscrow {
 
     #[public]
     #[internal]
-    fn set_spend_limit_timelock() {
-        // check the timelock is 0
-        let mut timelock = storage.timelocks.read();
-        assert(timelock.spend_limit_timelock == 0, "Spend limit timelock already exists!");
-        // set block number
-        timelock.spend_limit_timelock = context.block_number();
-        storage.timelocks.write(timelock);
-    }
-
-    #[public]
-    #[internal]
-    fn set_withdraw_timelock() {
-        // check the timelock is 0
-        let mut timelock = storage.timelocks.read();
-        assert(timelock.withdraw_timelock == 0, "Withdraw timelock already exists!");
-        // set block number
-        timelock.withdraw_timelock = context.block_number();
-        storage.timelocks.write(timelock);
-    }
-
-    #[public]
-    #[internal]
-    fn elapse_spend_limit_timelock() {
-        // check the timelock has elapsed
+    fn _set_timelock(spend_limit: bool, withdraw: bool) {
         let mut timelock = storage.timelocks.read();
         let current_block = context.block_number();
-        assert(
-            timelock.spend_limit_timelock + TIMELOCK_BLOCKS <= current_block,
-            "Spend limit timelock not elapsed!"
-        );
-        // reset the timelock
-        timelock.spend_limit_timelock = 0;
+        if spend_limit {
+            assert(timelock.spend_limit_timelock == 0, "Spend limit timelock already exists!");
+            timelock.spend_limit_timelock = current_block;
+        }
+        if withdraw {
+            assert(timelock.withdraw_timelock == 0, "Withdraw timelock already exists!");
+            timelock.withdraw_timelock = current_block;
+        }
         storage.timelocks.write(timelock);
     }
 
     #[public]
     #[internal]
-    fn elapse_withdraw_timelock() {
-        // check the timelock has elapsed
+    fn _elapse_timelock(spend_limit: bool, withdraw: bool) {
         let mut timelock = storage.timelocks.read();
         let current_block = context.block_number();
-        assert(
-            timelock.withdraw_timelock + TIMELOCK_BLOCKS <= current_block,
-            "Withdraw timelock not elapsed!"
-        );
-        // reset the timelock
-        timelock.withdraw_timelock = 0;
+        if spend_limit {
+            assert(
+                timelock.spend_limit_timelock + TIMELOCK_BLOCKS <= current_block,
+                "Spend limit timelock not elapsed!"
+            );
+            timelock.withdraw_timelock = 0;
+        }
+        if withdraw {
+            assert(
+                timelock.withdraw_timelock + TIMELOCK_BLOCKS <= current_block,
+                "Withdraw timelock not elapsed!"
+            );
+            timelock.withdraw_timelock = 0;
+        }
+        storage.timelocks.write(timelock);
+    }
+
+    #[public]
+    #[internal]
+    fn _cancel_timelock(spend_limit: bool, withdraw: bool) {
+        let mut timelock = storage.timelocks.read();
+        if spend_limit {
+            timelock.spend_limit_timelock = 0;
+        }
+        if withdraw {
+            timelock.withdraw_timelock = 0;
+        }
         storage.timelocks.write(timelock);
     }
 
@@ -339,7 +388,14 @@ pub contract CardEscrow {
     fn check_epoch(asserted_epoch: Field) {
         let timestamp = context.timestamp();
         let current_epoch = (timestamp as Field / 86400) as Field;
-        assert(current_epoch == asserted_epoch, "Epoch mismatch");
+        assert(current_epoch == asserted_epoch, "Epoch mismatch!");
+    }
+    
+
+    #[public]
+    #[view]
+    fn get_timelocks_public() -> Timelock {
+        storage.timelocks.read()
     }
 
     ////////////////////////////
@@ -373,7 +429,7 @@ pub contract CardEscrow {
 
         // authorize this call
         let config = get_config_and_reemit(context, config_storage);
-        assert(config.operator_address == caller, "Unauthorized: not card operator");
+        assert(config.operator_address == caller, "Unauthorized: not card operator!");
 
         // transfer the tokens out
         Token::at(config.token_address)
@@ -397,5 +453,12 @@ pub contract CardEscrow {
     pub unconstrained fn get_config() -> ConfigNote {
         storage.config.view_note()
     }
+
+    #[utility]
+    pub unconstrained fn get_timelocks_private() -> TimelockedNote {
+        storage.timelocks_private.view_note()
+    }
+
+
 
 }
