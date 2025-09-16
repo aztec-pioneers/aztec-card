@@ -1,6 +1,7 @@
 use aztec::{
     oracle::{
         random::random,
+        notes::check_nullifier_exists,
         execution::{get_contract_address, get_timestamp, get_block_number},
         storage::storage_read,
     },
@@ -17,7 +18,7 @@ use crate::{
         timelock::Timelock,
         timelocked_note::TimelockedNote
     },
-    test::utils::token::{private_transfer_authwit, mint_to_private}
+    test::utils::token::private_transfer_authwit
 };
 
 pub unconstrained fn get_config(
