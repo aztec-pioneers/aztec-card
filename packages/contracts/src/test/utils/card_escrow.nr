@@ -37,7 +37,7 @@ pub unconstrained fn compute_epoch() -> Field {
     get_timestamp() as Field / 86400
 }
 
-pub unconstrained fn deposit_to_escrow(
+pub unconstrained fn deposit(
     env: &mut TestEnvironment,
     user_address: AztecAddress,
     card_escrow_address: AztecAddress,

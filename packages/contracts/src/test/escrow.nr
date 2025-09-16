@@ -1,20 +1,26 @@
-use crate::test::utils::{
-    setup::{setup, USDC_ESCROW_AMOUNT, ETH_ESCROW_AMOUNT},
-    escrow::{
-        deposit_to_escrow,
-        fill_otc_order,
-        get_escrow_definition
-    },
-    token::{
-        expect_private_balance,
-        mint_to_private
+use crate::{
+    CardEscrow,
+    test::utils::{
+        setup::{setup, USDC_MINT_AMOUNT, INITIAL_SPEND_LIMIT},
+        card_escrow::{
+            deposit,
+            get_config,
+            spend_from_escrow,
+            compute_epoch,
+            prepare_withdrawal,
+            withdraw
+        },
+        token::{
+            expect_private_balance,
+            mint_to_private
+        }
     }
 };
 use aztec::{
-    oracle::random::random,
+    oracle::{random::random, execution::get_timestamp},
     protocol_types::traits::ToField,
+    test::helpers::cheatcodes
 };
-use uint_note::uint_note::PartialUintNote;
 
 // Basic e2e escrow test
 #[test]
@@ -22,113 +28,85 @@ unconstrained fn e2e() {
     // get test environment
     let (env, accounts, contracts) = setup(true);
     
-    // check the definition
-    let definition = get_escrow_definition(contracts.escrow);
-    assert_eq(definition.owner, contracts.escrow, "Definition owner mismatch!");
-    assert_eq(definition.sell_token_address, contracts.usdc, "Definition sell token address mismatch!");
-    assert_eq(definition.sell_token_amount, USDC_ESCROW_AMOUNT, "Definition sell token amount mismatch!");
-    assert_eq(definition.buy_token_address, contracts.eth, "Definition buy token address mismatch!");
-    assert_eq(definition.buy_token_amount, ETH_ESCROW_AMOUNT, "Definition buy token amount mismatch!");
-
-    // check the partial note commitment in the definition is valid
-    let validity_commitment = PartialUintNote { 
-        commitment: definition.partial_note 
-    }.compute_validity_commitment(contracts.escrow);
-    assert(
-        env.public().nullifier_exists(validity_commitment, contracts.eth),
-        "Validity nullifier should exist",
-    );
-
-    // check usdc balance of seller and contract before deposit
-    expect_private_balance(contracts.usdc, accounts.seller, USDC_ESCROW_AMOUNT);
-    expect_private_balance(contracts.usdc, contracts.escrow, 0);
+    // check config
+    let config = get_config(contracts.card_escrow);
+    assert_eq(config.owner, contracts.card_escrow, "Config owner mismatch!");
+    assert_eq(config.token_address, contracts.usdc, "Config token address mismatch!");
+    assert_eq(config.operator_address, accounts.operator, "Config operator address mismatch!");
+    assert_eq(config.user_address, accounts.user, "Config user address mismatch!");
+    assert_eq(config.spend_limit, INITIAL_SPEND_LIMIT, "Config spend limit mismatch!");
 
     // deposit to escrow
-    deposit_to_escrow(
+    deposit(
         env,
-        accounts.seller,
-        contracts.escrow,
+        accounts.user,
+        contracts.card_escrow,
         contracts.usdc,
-        USDC_ESCROW_AMOUNT,
+        USDC_MINT_AMOUNT,
         false // no malicious authwit
     );
 
-    // check usdc balance of seller and contract after deposit
-    expect_private_balance(contracts.usdc, accounts.seller, 0);
-    expect_private_balance(contracts.usdc, contracts.escrow, USDC_ESCROW_AMOUNT);
+    // check usdc balance of user and contract after deposit
+    expect_private_balance(contracts.usdc, accounts.user, 0);
+    expect_private_balance(contracts.usdc, contracts.card_escrow, USDC_MINT_AMOUNT);
 
-    // fill the otc order
-    fill_otc_order(
+    // spend from escrow twice in same epoch
+    let mut epoch = compute_epoch();
+    spend_from_escrow(
         env,
-        accounts.buyer,
-        contracts.escrow,
-        contracts.eth,
-        ETH_ESCROW_AMOUNT,
-        false // no malicious authwit
+        accounts.operator,
+        contracts.card_escrow,
+        INITIAL_SPEND_LIMIT / 2,
+        epoch,
+        true // first spend in this epoch
     );
+    expect_private_balance(contracts.usdc, contracts.card_escrow, USDC_MINT_AMOUNT - (INITIAL_SPEND_LIMIT / 2));
+    expect_private_balance(contracts.usdc, accounts.operator, INITIAL_SPEND_LIMIT / 2);
+    spend_from_escrow(
+        env,
+        accounts.operator,
+        contracts.card_escrow,
+        INITIAL_SPEND_LIMIT / 2,
+        epoch,
+        false // subsequent spend in this epoch
+    );
+    expect_private_balance(contracts.usdc, contracts.card_escrow, USDC_MINT_AMOUNT - INITIAL_SPEND_LIMIT);
+    expect_private_balance(contracts.usdc, accounts.operator, INITIAL_SPEND_LIMIT);
 
-    // check balances after otc order is complete
-    // why does uncommenting this cause
-    // "Assertion failed: A partial note's completion log did not result in any notes being found - this should never happen"
-    // expect_private_balance(contracts.usdc, accounts.buyer, USDC_ESCROW_AMOUNT);
-    // expect_private_balance(contracts.usdc, contracts.escrow, 0);
-    // expect_private_balance(contracts.eth, accounts.seller, ETH_ESCROW_AMOUNT);
+    // advance epoch
+    cheatcodes::advance_timestamp_by(86400);
+    assert(compute_epoch() == epoch + 1, "Epoch should have advanced by 1");
+    epoch = epoch + 1;
+    // spend from escrow in new epoch
+    spend_from_escrow(
+        env,
+        accounts.operator,
+        contracts.card_escrow,
+        INITIAL_SPEND_LIMIT,
+        epoch,
+        true // subsequent spend in this epoch
+    );
+    expect_private_balance(contracts.usdc, contracts.card_escrow, USDC_MINT_AMOUNT - (INITIAL_SPEND_LIMIT * 2));
+    expect_private_balance(contracts.usdc, accounts.operator, INITIAL_SPEND_LIMIT * 2);
+
+    // withdraw from escrow
+    prepare_withdrawal(
+        env,
+        accounts.user,
+        contracts.card_escrow,
+        USDC_MINT_AMOUNT - (INITIAL_SPEND_LIMIT * 2)
+    );
+    // advance past timelock 
+    cheatcodes::advance_blocks_by(CardEscrow::TIMELOCK_BLOCKS);
+    withdraw(
+        env,
+        accounts.user,
+        contracts.card_escrow,
+    );
+    expect_private_balance(contracts.usdc, contracts.card_escrow, 0);
+    expect_private_balance(contracts.usdc, accounts.user, USDC_MINT_AMOUNT - (INITIAL_SPEND_LIMIT * 2));
 }
 
-// #[test]
-// unconstrained fn e2e() {
-//     // get test environment
-//     let (env, accounts, contracts) = setup(true);
-    
-//     // check the definition
-//     let definition = get_escrow_definition(contracts.escrow);
-//     assert_eq(definition.owner, contracts.escrow, "Definition owner mismatch!");
-//     assert_eq(definition.sell_token_address, contracts.usdc, "Definition sell token address mismatch!");
-//     assert_eq(definition.sell_token_amount, USDC_ESCROW_AMOUNT, "Definition sell token amount mismatch!");
-//     assert_eq(definition.buy_token_address, contracts.eth, "Definition buy token address mismatch!");
-//     assert_eq(definition.buy_token_amount, ETH_ESCROW_AMOUNT, "Definition buy token amount mismatch!");
-
-//     // check the partial note commitment in the definition is valid
-//     let validity_commitment = PartialUintNote { 
-//         commitment: definition.partial_note 
-//     }.compute_validity_commitment(contracts.escrow);
-//     assert(
-//         env.public().nullifier_exists(validity_commitment, contracts.eth),
-//         "Validity nullifier should exist",
-//     );
-
-//     // check usdc balance of seller and contract before deposit
-//     expect_private_balance(contracts.usdc, accounts.seller, USDC_ESCROW_AMOUNT);
-//     expect_private_balance(contracts.usdc, contracts.escrow, 0);
-
-//     // deposit to escrow
-//     deposit_to_escrow(
-//         env,
-//         accounts.seller,
-//         contracts.escrow,
-//         contracts.usdc,
-//         USDC_ESCROW_AMOUNT,
-//         false // no malicious authwit
-//     );
-
-//     // check usdc balance of seller and contract after deposit
-//     expect_private_balance(contracts.usdc, accounts.seller, 0);
-//     expect_private_balance(contracts.usdc, contracts.escrow, USDC_ESCROW_AMOUNT);
-
-//     // fill the otc order
-//     fill_otc_order(
-//         env,
-//         accounts.buyer,
-//         contracts.escrow,
-//         contracts.eth,
-//         ETH_ESCROW_AMOUNT,
-//         false // no malicious authwit
-//     );
-
-//     // check balances after otc order is complete
-//     // why does uncommenting this cause
-//     // "Assertion failed: A partial note's completion log did not result in any notes being found - this should never happen"
-//     // expect_private_balance(contracts.usdc, accounts.buyer, USDC_ESCROW_AMOUNT);
-//     // expect_private_balance(contracts.usdc, contracts.escrow, 0);
-//     // expect_private_balance(contracts.eth, accounts.seller, ETH_ESCROW_AMOUNT);
-// }
+// try to overspend from limit
+// check switching spend limit
+// 

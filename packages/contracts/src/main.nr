@@ -18,6 +18,7 @@ pub contract CardEscrow {
             PrivateMutable,
             Map
         },
+        oracle::debug_log::{debug_log, debug_log_format},
         messages::logs::note::encode_and_encrypt_note,
         protocol_types::traits::ToField,
     };
@@ -30,7 +31,7 @@ pub contract CardEscrow {
     };
 
     // number of blocks that must elapse for a timelock
-    global TIMELOCK_BLOCKS: u32 = 30;
+    pub global TIMELOCK_BLOCKS: u32 = 30;
 
     #[storage]
     struct Storage<Context> {
@@ -83,9 +84,12 @@ pub contract CardEscrow {
 
     #[private]
     fn deposit(amount: u128, _nonce: Field) {
-        let config = storage.config.get_note().note;
         let self_address = context.this_address();
         let caller = context.msg_sender();
+
+        // authorize this call
+        let config = get_config_and_reemit(&mut context, storage.config);
+        assert(config.user_address == caller, "Unauthorized: not card user");
 
         // transfer tokens in
         Token::at(config.token_address)
@@ -104,7 +108,7 @@ pub contract CardEscrow {
         let self_address = context.this_address();
 
         // authorize this call
-        let config = storage.config.get_note().note;
+        let config = get_config_and_reemit(&mut context, storage.config);
         assert(config.user_address == caller, "Unauthorized: not card user");
 
         // update the timelocked note
@@ -128,7 +132,7 @@ pub contract CardEscrow {
         let self_address = context.this_address();
 
         // authorize this call
-        let config = storage.config.get_note().note;
+        let config = get_config_and_reemit(&mut context, storage.config);
         assert(config.user_address == caller, "Unauthorized: not card user");
 
         // get the amount to transfer from the timelocked note
@@ -165,8 +169,7 @@ pub contract CardEscrow {
     #[private]
     fn spend_first_in_epoch(amount: u128, epoch: Field) {
         // common spend logic
-        let config = storage.config.get_note().note;
-        let spending_limit = _spend(&mut context, config, amount, epoch);
+        let spending_limit = _spend(&mut context, storage.config, amount, epoch);
 
         // check the spend amount agains the limit
         assert(spending_limit >= amount, "Spend limit exceeded!");
@@ -176,6 +179,7 @@ pub contract CardEscrow {
             context.this_address(),
             amount,
         );
+
         storage
             .spend_epoch
             .at(epoch)
@@ -190,8 +194,7 @@ pub contract CardEscrow {
     #[private]
     fn spend_subsequent_in_epoch(amount: u128, epoch: Field) {
         // common spend logic
-        let config = storage.config.get_note().note;
-        let spending_limit = _spend(&mut context, config, amount, epoch);
+        let spending_limit = _spend(&mut context, storage.config, amount, epoch);
 
         // get the existing epoch note
         let mut spent_amount_epoch_note = storage
@@ -344,9 +347,24 @@ pub contract CardEscrow {
     ////////////////////////////
 
     #[contract_library_method]
+    fn get_config_and_reemit(
+        context: &mut PrivateContext,
+        config_storage: PrivateMutable<ConfigNote, &mut PrivateContext>
+    ) -> ConfigNote {
+        let self_address = context.this_address();
+        let config_emission = config_storage.get_note();
+        config_emission.emit(encode_and_encrypt_note(
+            context,
+            self_address,
+            self_address
+        ));
+        config_emission.note
+    }
+
+    #[contract_library_method]
     fn _spend(
         context: &mut PrivateContext,
-        config: ConfigNote,
+        config_storage: PrivateMutable<ConfigNote, &mut PrivateContext>,
         amount: u128,
         epoch: Field
     ) -> u128 {
@@ -354,8 +372,8 @@ pub contract CardEscrow {
         let self_address = context.this_address();
 
         // authorize this call
+        let config = get_config_and_reemit(context, config_storage);
         assert(config.operator_address == caller, "Unauthorized: not card operator");
-
 
         // transfer the tokens out
         Token::at(config.token_address)
@@ -366,7 +384,6 @@ pub contract CardEscrow {
                 0
             )
             .call(context);
-
         // enqueue a check to make sure the asserted epoch is correct
         CardEscrow::at(self_address)
             .check_epoch(epoch)
