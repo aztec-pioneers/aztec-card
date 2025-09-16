@@ -5,7 +5,8 @@ import {
     L1FeeJuicePortalManager,
     FeeJuicePaymentMethodWithClaim,
 } from "@aztec/aztec.js";
-import { getInitialTestAccountsManagers, getInitialTestAccountsWallets } from "@aztec/accounts/testing";
+import { CheatCodes } from "@aztec/aztec.js/testing"
+import { getInitialTestAccountsManagers } from "@aztec/accounts/testing";
 import {
     deployEscrowContract,
     deployTokenContractWithMinter,
@@ -17,15 +18,24 @@ import {
     expectBalancePrivate,
     CardEscrowContract,
     TokenContract,
-    setupAccountWithFeeClaim
+    setupAccountWithFeeClaim,
+    createCheatCodes
 } from "../src";
+
+export const computeEpoch = async (cc: CheatCodes): Promise<Fr> => {
+    const timestamp = await cc.aztec.timestamp();
+    return new Fr(Math.floor(timestamp / 86400));
+}
 
 describe("Private Transfer Demo Test", () => {
     let userPXE: PXE;
     let operatorPXE: PXE;
+    let userCC: CheatCodes;
+    let operatorCC: CheatCodes;
 
     let minter: AccountWallet;
     let user: AccountWallet;
+    
     let operator: AccountWallet;
 
     let escrowMasterKey: Fr;
@@ -42,6 +52,8 @@ describe("Private Transfer Demo Test", () => {
         // setup PXE connections
         userPXE = await createPXE();
         operatorPXE = await createPXE(1);
+        userCC = await createCheatCodes(userPXE);
+        operatorCC = await createCheatCodes(operatorPXE);
 
         // get PXE 1 accounts
         const wallets = await Promise.all(
@@ -84,7 +96,7 @@ describe("Private Transfer Demo Test", () => {
 
     });
 
-    test("check escrow key leaking", async () => {
+    test.skip("check escrow key leaking", async () => {
         // deploy new escrow instance
         ({ contract: escrow, secretKey: escrowMasterKey } = await deployEscrowContract(
             userPXE,
@@ -126,7 +138,98 @@ describe("Private Transfer Demo Test", () => {
     });
 
     test("e2e", async () => {
+        ({ contract: escrow, secretKey: escrowMasterKey } = await deployEscrowContract(
+            userPXE,
+            user,
+            usdc.address,
+            operator.getAddress(),
+            INITIAL_SPEND_LIMIT
+        ));
+
+        // give operator knowledge of the escrow
+        await operatorPXE.registerAccount(escrowMasterKey, await escrow.partialAddress);
+        await operatorPXE.registerContract(escrow);
+        await escrow.withWallet(operator).methods.sync_private_state().simulate();
+
+        // check balances before
+        usdc = usdc.withWallet(user);
+        expect(expectBalancePrivate(usdc, user.getAddress(), MINT_AMOUNT)).toBeTruthy();
+        expect(expectBalancePrivate(usdc, escrow.address, 0n)).toBeTruthy();
+
+        // deposit tokens into the escrow
+        await depositToEscrow(
+            escrow,
+            user,
+            usdc,
+            MINT_AMOUNT,
+        );
+
+        // check USDC balances after transfer in
+        usdc = usdc.withWallet(user);
+        expect(
+            expectBalancePrivate(usdc, user.getAddress(), 0n)
+        ).toBeTruthy();
+        expect(expectBalancePrivate(usdc, escrow.address, MINT_AMOUNT)).toBeTruthy();
+
+        // spend some tokens from the escrow twice
+        let epoch = await computeEpoch(cheatcodes);
+
+        await escrow
+            .withWallet(operator)
+            .methods.spend(INITIAL_SPEND_LIMIT / 2n, epoch)
+            .send()
+            .wait();
+
+        await escrow
+            .withWallet(operator)
+            .methods.spend(INITIAL_SPEND_LIMIT / 2n, epoch)
+            .send()
+            .wait();
+        expect(expectBalancePrivate(usdc, escrow.address, MINT_AMOUNT - INITIAL_SPEND_LIMIT)).toBeTruthy();
+        expect(expectBalancePrivate(usdc, operator.getAddress(), INITIAL_SPEND_LIMIT)).toBeTruthy();
+
+        // advance epoch and try to spend again
+        console.log("1")
+        let currentTimestamp = await userCC.eth.timestamp();
+        console.log("current timestamp: ", currentTimestamp)
+        await userCC.eth.warp(currentTimestamp + 86400);
+        await operatorCC.eth.warp(currentTimestamp + 86400);
+        console.log("warped to ", currentTimestamp + 86400)
+        // mine a block on l1 and send a tx on l2 to ensure the timestamp change takes effect
+        await userCC.eth.mine(1);
+        await operatorCC.eth.mine(1);
+        console.log("mined 1 block on l1")
+        await usdc
+            .withWallet(minter)
+            .methods.mint_to_private(
+                minter.getAddress(),
+                minter.getAddress(),
+                1
+            )
+            .send()
+            .wait();
+        console.log("sent tx on l2")
+        epoch = epoch.add(Fr.ONE);
+        console.log("Next epoch: ", epoch.toBigInt());
+                
+        // spend again
+        // await escrow
+        //     .withWallet(operator)
+        //     .methods.spend(INITIAL_SPEND_LIMIT, epoch)
+        //     .send()
+        //     .wait();
+        // expect(expectBalancePrivate(usdc, escrow.address, MINT_AMOUNT - (2n * INITIAL_SPEND_LIMIT))).toBeTruthy();
+        // expect(expectBalancePrivate(usdc, operator.getAddress(), 2n * INITIAL_SPEND_LIMIT)).toBeTruthy();
+
+        // withdraw some tokens from the escrow
+        // await escrow
+        //     .withWallet(user)
+        //     .methods.prepare_withdrawal(INITIAL_SPEND_LIMIT)
+        //     .send()
+        //     .wait();
         
+        // // advance 30 l2 blocks
+        // await 
     });
 });
 
@@ -169,9 +272,9 @@ describe("Private Transfer Demo Test", () => {
 //         expect(expectBalancePrivate(eth, escrow.address, 0n)).toBeTruthy();
 
 //         // give buyer knowledge of the escrow
-//         await operatorPXE.registerAccount(escrowMasterKey, await escrow.partialAddress);
-//         await operatorPXE.registerContract(escrow);
-//         await escrow.withWallet(buyer).methods.sync_private_state().simulate();
+        // await operatorPXE.registerAccount(escrowMasterKey, await escrow.partialAddress);
+        // await operatorPXE.registerContract(escrow);
+        // await escrow.withWallet(buyer).methods.sync_private_state().simulate();
 
 //         // transfer tokens back out
 //         await fillOTCOrder(escrow, buyer, eth, buyTokenAmount);

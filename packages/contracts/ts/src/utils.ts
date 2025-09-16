@@ -1,4 +1,5 @@
 import { createPXEClient, PXE, waitForPXE } from "@aztec/aztec.js";
+import { CheatCodes } from "@aztec/aztec.js/testing";
 
 export const createPXE = async (id: number = 0) => {
     const { BASE_PXE_URL = `http://localhost` } = process.env;
@@ -7,6 +8,11 @@ export const createPXE = async (id: number = 0) => {
     await waitForPXE(pxe);
     return pxe;
 };
+
+export const createCheatCodes = async (pxe: PXE) => {
+    const { L1_RPC_URL = `http://localhost:8545` } = process.env;
+    return await CheatCodes.create([L1_RPC_URL], pxe);
+}
 
 export const wad = (n: bigint = 1n, decimals: bigint = 18n) =>
     n * 10n ** decimals;
