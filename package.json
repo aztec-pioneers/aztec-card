@@ -1,5 +1,5 @@
 {
-  "name": "aztec-otc-desk-monorepo",
+  "name": "@aztec-card/monorepo",
   "workspaces": {
     "packages": [
       "packages/*"
@@ -11,6 +11,7 @@
       "@aztec/aztec.js": "^1.2.1",
       "@aztec/accounts": "^1.2.1",
       "@aztec/ethereum": "^1.2.1",
+      "@aztec/entrypoints": "^1.2.1",
       "@aztec/stdlib": "^1.2.1",
       "@aztec/noir-contracts.js": "1.2.1",
       "dotenv": "^17.2.1",

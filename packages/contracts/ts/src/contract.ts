@@ -218,6 +218,24 @@ export async function cancelTimelocks(
     return receipt.txHash;
 }
 
+/**
+ * Checks that a private balance of a token for a specific address matches expectations
+ * @param token - the token balance to query
+ * @param address - the address of the token holder
+ * @param expectedBalance - the balance expected to be returned
+ * @returns - true if balance matches expectations, and false otherwise
+ */
+export async function expectBalancePrivate(
+    token: TokenContract,
+    address: AztecAddress,
+    expectedBalance: bigint
+): Promise<boolean> {
+    const empiricalBalance = await token
+        .methods
+        .balance_of_private(address)
+        .simulate();
+    return empiricalBalance === expectedBalance;
+}
 
 export const getTokenContract = async (
     pxe: PXE,
