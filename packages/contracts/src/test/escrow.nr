@@ -25,7 +25,9 @@ unconstrained fn test_e2e() {
     assert_eq(config.token_address, contracts.usdc, "Config token address mismatch!");
     assert_eq(config.operator_address, accounts.operator, "Config operator address mismatch!");
     assert_eq(config.user_address, accounts.user, "Config user address mismatch!");
-    assert_eq(config.spend_limit, INITIAL_SPEND_LIMIT, "Config spend limit mismatch!");
+    // check spend limit
+    let spend_limit = card_escrow::get_spend_limit(contracts.card_escrow);
+    assert_eq(spend_limit, INITIAL_SPEND_LIMIT, "Config spend limit mismatch!");
 
     // deposit to escrow
     card_escrow::deposit(

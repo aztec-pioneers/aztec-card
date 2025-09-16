@@ -16,6 +16,7 @@ pub contract CardEscrow {
             AztecAddress,
             PublicMutable,
             PrivateMutable,
+            PrivateImmutable,
             Map
         },
         protocol_types::{
@@ -28,6 +29,8 @@ pub contract CardEscrow {
     use token_contract::Token;
     use crate::types::{
         config_note::ConfigNote,
+        escrow_nonce_note::EscrowNonceNote,
+        spend_limit_note::SpendLimitNote,
         timelock::Timelock,
         timelocked_note::TimelockedNote,
         spent_amount_epoch_note::SpentAmountEpochNote,
@@ -38,7 +41,9 @@ pub contract CardEscrow {
 
     #[storage]
     struct Storage<Context> {
-        config: PrivateMutable<ConfigNote, Context>,
+        config: PrivateImmutable<ConfigNote, Context>,
+        escrow_nonce: PrivateMutable<EscrowNonceNote, Context>,
+        spend_limit: PrivateMutable<SpendLimitNote, Context>,
         timelocks: PublicMutable<Timelock, Context>,
         timelocks_private: PrivateMutable<TimelockedNote, Context>,
         spend_epoch: Map<Field, PrivateMutable<SpentAmountEpochNote, Context>, Context>,
@@ -64,21 +69,37 @@ pub contract CardEscrow {
             token_address,
             operator_address,
             caller,
-            spend_limit
         );
         storage.config.initialize(config).emit(encode_and_encrypt_note(
             &mut context,
             self_address,
             self_address
         ));
-        // initialize the timelock note
+
+        // Initialize empty escrow nonce note
+        let escrow_nonce_note = EscrowNonceNote::new(self_address, 1);
+        storage.escrow_nonce.initialize(escrow_nonce_note).emit(encode_and_encrypt_note
+            (&mut context,
+            self_address,
+            self_address
+        ));
+
+        // Initialize spend limit note
+        let spend_limit_note = SpendLimitNote::new(self_address, spend_limit);
+        storage.spend_limit.initialize(spend_limit_note).emit(encode_and_encrypt_note(
+            &mut context,
+            self_address,
+            self_address
+        ));
+        
+
+        // Initialize empty timelock notes
         let timelocked_note = TimelockedNote::new(self_address, 0, 0);
         storage.timelocks_private.initialize(timelocked_note).emit(encode_and_encrypt_note(
             &mut context,
             self_address,
             self_address
         ));
-
     }
     
     ////////////////////////////
@@ -91,7 +112,7 @@ pub contract CardEscrow {
         let caller = context.msg_sender();
 
         // authorize this call
-        let config = get_config_and_reemit(&mut context, storage.config);
+        let config = storage.config.get_note();
         assert(config.user_address == caller, "Unauthorized: not card user!");
 
         // transfer tokens in
@@ -111,10 +132,10 @@ pub contract CardEscrow {
         let self_address = context.this_address();
 
         // authorize this call
-        let config = get_config_and_reemit(&mut context, storage.config);
+        let config = storage.config.get_note();
         assert(config.user_address == caller, "Unauthorized: not card user!");
 
-        // update the timelocked note
+        // update the timelock in mutable config
         let mut timelocked_note = storage.timelocks_private.get_note().note;
         timelocked_note.proposed_withdraw_amount = amount;
         storage.timelocks_private.replace(timelocked_note).emit(encode_and_encrypt_note(
@@ -135,7 +156,7 @@ pub contract CardEscrow {
         let self_address = context.this_address();
 
         // authorize this call
-        let config = get_config_and_reemit(&mut context, storage.config);
+        let config = storage.config.get_note();
         assert(config.user_address == caller, "Unauthorized: not card user!");
 
         // get the amount to transfer from the timelocked note
@@ -186,7 +207,7 @@ pub contract CardEscrow {
         let self_address = context.this_address();
 
         // authorize this call
-        let config = get_config_and_reemit(&mut context, storage.config);
+        let config = storage.config.get_note();
         assert(config.operator_address == caller, "Unauthorized: not card operator!");
         
         // check epoch note has been initialized and create/ update it
@@ -200,9 +221,12 @@ pub contract CardEscrow {
             spend_amount_epoch_note.spent_amount += existing_note.spent_amount;
         }
 
+        // get spend limit note
+        let spend_limit_note = get_spend_limit_and_reemit(&mut context, storage.spend_limit);
+
         // check the spend amount against the limit
         assert(
-            config.spend_limit >= spend_amount_epoch_note.spent_amount,
+            spend_limit_note.amount >= spend_amount_epoch_note.spent_amount,
             "Spend limit exceeded!"
         );
 
@@ -240,7 +264,7 @@ pub contract CardEscrow {
         let self_address = context.this_address();
 
         // authorize this call
-        let config = get_config_and_reemit(&mut context, storage.config);
+        let config = storage.config.get_note();
         assert(config.user_address == caller, "Unauthorized: not card user!");
 
         // update the timelocked note
@@ -264,8 +288,7 @@ pub contract CardEscrow {
         let self_address = context.this_address();
 
         // authorize this call
-        // DO NOT USE `get_config_and_reemit` UTILITY HERE SINCE WE MUTATE IT
-        let mut config = storage.config.get_note().note;
+        let config = storage.config.get_note();
         assert(
             (config.user_address == caller)
             | (config.operator_address == caller),
@@ -277,9 +300,12 @@ pub contract CardEscrow {
         let proposed_spend_limit = timelocked_note.proposed_spend_limit;
         assert(proposed_spend_limit != 0, "No spend limit change has been scheduled!");
 
+        // get mutable config to update
+        let mut spend_limit_note = storage.spend_limit.get_note().note;
+
         // update the spend limit
-        config.spend_limit = timelocked_note.proposed_spend_limit;
-        storage.config.replace(config).emit(encode_and_encrypt_note(
+        spend_limit_note.amount = timelocked_note.proposed_spend_limit;
+        storage.spend_limit.replace(spend_limit_note).emit(encode_and_encrypt_note(
             &mut context,
             self_address,
             self_address
@@ -305,7 +331,7 @@ pub contract CardEscrow {
         let self_address = context.this_address();
 
         // authorize this call
-        let mut config = storage.config.get_note().note;
+        let config = storage.config.get_note();
         assert(config.user_address == caller, "Unauthorized: not card user!");
 
         // reset the timelock note
@@ -403,18 +429,18 @@ pub contract CardEscrow {
     ////////////////////////////
 
     #[contract_library_method]
-    fn get_config_and_reemit(
+    fn get_spend_limit_and_reemit(
         context: &mut PrivateContext,
-        config_storage: PrivateMutable<ConfigNote, &mut PrivateContext>
-    ) -> ConfigNote {
+        spend_limit_storage: PrivateMutable<SpendLimitNote, &mut PrivateContext>
+    ) -> SpendLimitNote {
         let self_address = context.this_address();
-        let config_emission = config_storage.get_note();
-        config_emission.emit(encode_and_encrypt_note(
+        let emission = spend_limit_storage.get_note();
+        emission.emit(encode_and_encrypt_note(
             context,
             self_address,
             self_address
         ));
-        config_emission.note
+        emission.note
     }
 
     #[contract_library_method]
@@ -436,6 +462,12 @@ pub contract CardEscrow {
     #[utility]
     pub unconstrained fn get_config() -> ConfigNote {
         storage.config.view_note()
+    }
+
+    #[utility]
+    pub unconstrained fn get_spend_limit() -> u128 {
+        let spend_limit_note = storage.spend_limit.view_note();
+        spend_limit_note.amount
     }
 
     #[utility]

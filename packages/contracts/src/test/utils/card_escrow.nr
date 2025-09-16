@@ -21,22 +21,6 @@ use crate::{
     test::utils::token::private_transfer_authwit
 };
 
-pub unconstrained fn get_config(
-    escrow_address: AztecAddress
-) -> ConfigNote {
-    // set cheatcode address to escrow
-    let current_contract_address = get_contract_address();
-    cheatcodes::set_contract_address(escrow_address);
-
-    // read definition
-    let definition = CardEscrow::get_config();
-
-    // set cheatcode address back to original
-    cheatcodes::set_contract_address(current_contract_address);
-
-    definition
-}
-
 pub unconstrained fn compute_epoch() -> Field {
     get_timestamp() as Field / 86400
 }
@@ -153,6 +137,37 @@ pub unconstrained fn cancel_timelocks(
     env.advance_block_by(1);
 }
 
+pub unconstrained fn get_config(
+    escrow_address: AztecAddress
+) -> ConfigNote {
+    // set cheatcode address to escrow
+    let current_contract_address = get_contract_address();
+    cheatcodes::set_contract_address(escrow_address);
+
+    // read definition
+    let definition = CardEscrow::get_config();
+
+    // set cheatcode address back to original
+    cheatcodes::set_contract_address(current_contract_address);
+
+    definition
+}
+
+pub unconstrained fn get_spend_limit(
+    escrow_address: AztecAddress
+) -> u128 {
+    // set cheatcode address to escrow
+    let current_contract_address = get_contract_address();
+    cheatcodes::set_contract_address(escrow_address);
+
+    // read definition
+    let spend_limit = CardEscrow::get_spend_limit();
+
+    // set cheatcode address back to original
+    cheatcodes::set_contract_address(current_contract_address);
+
+    spend_limit
+}
 
 pub unconstrained fn get_timelocks_private(
     card_escrow_address: AztecAddress
