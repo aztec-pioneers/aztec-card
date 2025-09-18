@@ -116,8 +116,15 @@ pub contract CardEscrow {
 
     ////////// DEPOSIT //////////
 
+    /**
+     * Privately deposit funds into the card escrow as the user, allowing operator to debit
+     * when the card is used offchain.
+     *
+     * @param amount - the amount of tokens to deposit
+     * @param authwit_nonce - the authwit nonce
+     */
     #[private]
-    fn deposit(amount: u128, _nonce: Field) {
+    fn deposit(amount: u128, authwit_nonce: Field) {
         let self_address = context.this_address();
         let caller = context.msg_sender();
 
@@ -131,13 +138,22 @@ pub contract CardEscrow {
                 caller,
                 self_address,
                 amount,
-                _nonce
+                authwit_nonce
             )
             .call(&mut context);
     }
     
     ////////// SPEND //////////
 
+    /**
+     * Privately "spend" funds as the operator
+     * In reality, the operator is debiting from the escrow when the user makes card payments
+     * Epoch checks prevent overspending from the card limit in a 24 hour period
+     * NOTE: Publicly leaks the fact that a spend happened when the epoch is checked
+     *
+     * @param amount - the amount of tokens to debit from the escrow
+     * @param epoch - the current epoch (day) according to the operator
+     */
     #[private]
     fn spend(amount: u128, epoch: Field) {
         let caller = context.msg_sender();
@@ -159,11 +175,11 @@ pub contract CardEscrow {
         }
 
         // get spend limit note
-        let spend_limit_note = _get_spend_limit_and_reemit(&mut context, storage.spend_limit);
+        let spend_limit = _get_spend_limit_and_reemit(&mut context, storage.spend_limit);
 
         // check the spend amount against the limit
         assert(
-            spend_limit_note.amount >= spend_amount_epoch_note.spent_amount,
+            spend_limit >= spend_amount_epoch_note.spent_amount,
             "Spend limit exceeded!"
         );
 
@@ -198,6 +214,12 @@ pub contract CardEscrow {
 
     ////////// WITHDRAW //////////
 
+    /**
+     * Privately withdraw funds from the escrow with the consent of the operator
+     * 
+     * @param amount - the amount of tokens to withdraw
+     * @param signature - the operator's signature authorizing the withdrawal
+     */
     #[private]
     fn withdraw(amount: u128, signature: [u8; 64]) {
         let caller = context.msg_sender();
@@ -259,6 +281,13 @@ pub contract CardEscrow {
         _bump_nonce(&mut context, storage.escrow_nonce, self_address);
     }
 
+    /**
+     * Privately prepare a forced withdrawal of funds from the escrow as the user
+     * Will be subject to a timelock to prevent malicious double-spends with card
+     * NOTE: Publicly leaks the fact that a withdrawal is prepared by setting the timelock
+     *
+     * @param amount - the maximum amount of tokens to withdraw
+     */
     #[private]
     fn prepare_forced_withdrawal(amount: u128) {
         let caller = context.msg_sender();
@@ -286,6 +315,14 @@ pub contract CardEscrow {
         _bump_nonce(&mut context, storage.escrow_nonce, self_address);
     }
 
+    /**
+     * Privately finalize a forced withdrawal of funds from the escrow as the user
+     * If a spend has happened that exceeds the maximum withdrawable amount, the user
+     * can withdraw the difference
+     * NOTE: Publicly leaks the fact that a withdrawal is finalized by clearing the timelock
+     *
+     * @param amount - the amount of tokens to withdraw (must be <= proposed withdraw amount)
+     */
     #[private]
     fn finalize_forced_withdrawal(amount: u128) {
         let caller = context.msg_sender();
@@ -341,6 +378,12 @@ pub contract CardEscrow {
 
     ////////// SPEND LIMIT //////////
 
+    /**
+     * Privately change the spend limit with the consent of the operator
+     *
+     * @param new_spend_limit - the new spend limit to set
+     * @param signature - the operator's signature authorizing the spend limit change
+     */
     #[private]
     fn change_spend_limit(
         new_spend_limit: u128,
@@ -404,6 +447,13 @@ pub contract CardEscrow {
         _bump_nonce(&mut context, storage.escrow_nonce, self_address);
     }
 
+    /**
+     * Privately prepare a forced change of the spend limit as the user
+     * Will be subject to a timelock to prevent malicious double-spends with card
+     * NOTE: Publicly leaks the fact that a spend limit change is happening by setting the timelock
+     *
+     * @param new_spend_limit - the new spend limit to set
+     */
     #[private]
     fn prepare_forced_spend_limit_change(new_spend_limit: u128) {
         let caller = context.msg_sender();
@@ -428,6 +478,10 @@ pub contract CardEscrow {
             .enqueue(&mut context);
     }
 
+    /**
+     * Privately finalize a forced change of the spend limit as the user
+     * NOTE: Publicly leaks the fact that a spend limit change is happening by clearing the
+     */
     #[private]
     fn finalize_forced_spend_limit_change() {
         let caller = context.msg_sender();
@@ -473,6 +527,13 @@ pub contract CardEscrow {
 
     ////////// TIMELOCKS //////////
 
+    /**
+     * Cancel any pending timelocks as the user
+     * NOTE: Publicly leaks the fact that either timelock is being cancelled by clearing the timelocks
+     *
+     * @param cancel_spend_limit - whether to cancel a pending spend limit change
+     * @param cancel_withdraw - whether to cancel a pending withdrawal
+     */
     #[private]
     fn cancel_timelocks(spend_limit: bool, withdraw: bool) {
         let caller = context.msg_sender();
@@ -507,6 +568,10 @@ pub contract CardEscrow {
 
     ////////// NONCE //////////
 
+    /**
+     * Privately bump the escrow nonce
+     * Emergency function that allows the operator to invalidate a signature they provided
+     */
     #[private]
     fn bump_nonce() {
         let self_address = context.this_address();
@@ -523,6 +588,13 @@ pub contract CardEscrow {
     ////////// PUBLIC //////////
     ////////////////////////////
 
+    /**
+     * Public function to set a timelock to the current block
+     * NOTE: internal - only called by "prepare" functions!
+     *
+     * @param spend_limit - whether to set the spend limit timelock
+     * @param withdraw - whether to set the withdraw timelock
+     */
     #[public]
     #[internal]
     fn _set_timelock(spend_limit: bool, withdraw: bool) {
@@ -539,6 +611,13 @@ pub contract CardEscrow {
         storage.timelocks.write(timelock);
     }
 
+    /**
+     * Public function that checks that a timelock has elapsed and clears it
+     * NOTE: internal - only called by "finalize" functions!
+     *
+     * @param spend_limit - whether to check the spend limit timelock
+     * @param withdraw - whether to check the withdraw timelock
+     */
     #[public]
     #[internal]
     fn _elapse_timelock(spend_limit: bool, withdraw: bool) {
@@ -561,6 +640,13 @@ pub contract CardEscrow {
         storage.timelocks.write(timelock);
     }
 
+    /**
+     * Public function to cancel a timelock
+     * NOTE: internal - only called by "cancel_timelocks"!
+     *
+     * @param spend_limit - whether to cancel the spend limit timelock
+     * @param withdraw - whether to cancel the withdraw timelock
+     */
     #[public]
     #[internal]
     fn _cancel_timelock(spend_limit: bool, withdraw: bool) {
@@ -574,6 +660,12 @@ pub contract CardEscrow {
         storage.timelocks.write(timelock);
     }
 
+    /**
+     * Public function to check that an epoch asserted privately matches the public state
+     * NOTE: internal - only called by "spend"!
+     *
+     * @param asserted_epoch - the epoch to check
+     */
     #[public]
     #[internal]
     fn check_epoch(asserted_epoch: Field) {
@@ -581,8 +673,11 @@ pub contract CardEscrow {
         let current_epoch = (timestamp / EPOCH_LENGTH) as Field;
         assert(current_epoch == asserted_epoch, "Epoch mismatch!");
     }
-    
 
+    /** 
+     * Public view function to get the current timelocks
+     * @return - the blocks each timelock was set at (0 if not set)
+     */
     #[public]
     #[view]
     fn get_timelocks_public() -> Timelock {
@@ -593,11 +688,18 @@ pub contract CardEscrow {
     ///////// LIBRARY //////////
     ////////////////////////////
 
+    /**
+     * Utility function to "read" a mutable note - PrivateMutable notes are nullified
+     * when retrieved in #[private] and must be re-emitted. Function abstracts the
+     * re-emission when reading a spend_limit note that won't be mutated
+     *
+     * @return - the spend limit amount
+     */
     #[contract_library_method]
     fn _get_spend_limit_and_reemit(
         context: &mut PrivateContext,
         spend_limit_storage: PrivateMutable<SpendLimitNote, &mut PrivateContext>
-    ) -> SpendLimitNote {
+    ) -> u128 {
         let self_address = context.this_address();
         let emission = spend_limit_storage.get_note();
         emission.emit(encode_and_encrypt_note(
@@ -605,9 +707,21 @@ pub contract CardEscrow {
             self_address,
             self_address
         ));
-        emission.note
+        emission.note.amount
     }
 
+    /**
+     * Unconstrained utility to check if a spend epoch note has been initialized
+     * Without checking for initialization, we cannot determine whether to create a
+     * new note or update an existing one. This utility prevents needing two different
+     * functions depending on whether it is the first spend of the epoch
+     *
+     * NOTE: Even though it is unconstrained, it is safe to use without extra checks 
+     *       since if the bool is wrong it will fail constraints in either case - can't
+     *       initalize if already initialized, can't replace if not initalized
+     * @param epoch - the epoch to check
+     * @return - whether the epoch note has been initialized
+     */
     #[contract_library_method]
     unconstrained fn _check_spend_epoch_initialized(
         epoch: Field
@@ -624,6 +738,14 @@ pub contract CardEscrow {
         unsafe { check_nullifier_exists(nullifier) }
     }
 
+    /**
+     * Utility function to handle bumping the escrow nonce
+     * NOTE: used every time an action that could jeopardize a signature is taken
+     *
+     * @param context - the current private context
+     * @param escrow_nonce_storage - the storage for the escrow nonce note
+     * @param self_address - the address of this contract
+     */
     #[contract_library_method]
     fn _bump_nonce(
         context: &mut PrivateContext,
@@ -643,22 +765,26 @@ pub contract CardEscrow {
     ///////// UTILITY //////////
     ////////////////////////////
 
+    /** Get the current nonce of the card escrow for signing purposes */
     #[utility]
     pub unconstrained fn get_nonce() -> Field {
         storage.escrow_nonce.view_note().nonce
     }
 
+    /** Get the static config of the card escrow */
     #[utility]
     pub unconstrained fn get_config() -> ConfigNote {
         storage.config.view_note()
     }
 
+    /** Get the current spend limit of the card escrow */
     #[utility]
     pub unconstrained fn get_spend_limit() -> u128 {
         let spend_limit_note = storage.spend_limit.view_note();
         spend_limit_note.amount
     }
 
+    /** Get the currently set proposed values being timelocked */
     #[utility]
     pub unconstrained fn get_timelocks_private() -> TimelockedNote {
         storage.timelocks_private.view_note()
