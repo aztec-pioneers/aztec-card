@@ -24,7 +24,7 @@ unconstrained fn test_spend_with_pending_withdraw() {
     );
 
     // attempt a withdraw of the full amount
-    card_escrow::prepare_withdrawal(
+    card_escrow::prepare_forced_withdrawal(
         env,
         accounts.user,
         contracts.card_escrow,
@@ -32,7 +32,7 @@ unconstrained fn test_spend_with_pending_withdraw() {
     );
     // spend up to the limit
     let epoch = card_escrow::compute_epoch();
-    card_escrow::spend_from_escrow(
+    card_escrow::spend(
         env,
         accounts.operator,
         contracts.card_escrow,
@@ -43,7 +43,7 @@ unconstrained fn test_spend_with_pending_withdraw() {
     cheatcodes::advance_blocks_by(CardEscrow::TIMELOCK_BLOCKS);
 
     // withdraw the difference
-    card_escrow::withdraw(
+    card_escrow::finalize_forced_withdrawal(
         env,
         accounts.user,
         contracts.card_escrow,
@@ -72,7 +72,7 @@ unconstrained fn test_withdraw_more_than_scheduled_fail() {
     );
 
     // attempt a withdraw of half the amount
-    card_escrow::prepare_withdrawal(
+    card_escrow::prepare_forced_withdrawal(
         env,
         accounts.user,
         contracts.card_escrow,
@@ -83,7 +83,7 @@ unconstrained fn test_withdraw_more_than_scheduled_fail() {
     cheatcodes::advance_blocks_by(CardEscrow::TIMELOCK_BLOCKS);
 
     // try to withdraw the 1 unit more than requested
-    card_escrow::withdraw(
+    card_escrow::finalize_forced_withdrawal(
         env,
         accounts.user,
         contracts.card_escrow,
@@ -109,7 +109,7 @@ unconstrained fn test_cannot_withdraw_more_than_available_fail() {
     // attempt a withdraw of more than available
     // NOTE: there is no way to constrain the balance of the token privately without a state proof
     //       just not worth it when it eventually is caught by transfer anyways
-    card_escrow::prepare_withdrawal(
+    card_escrow::prepare_forced_withdrawal(
        env,
        accounts.user,
        contracts.card_escrow,
@@ -120,7 +120,7 @@ unconstrained fn test_cannot_withdraw_more_than_available_fail() {
     cheatcodes::advance_blocks_by(CardEscrow::TIMELOCK_BLOCKS);
 
     // try to withdraw the full amount
-    card_escrow::withdraw(
+    card_escrow::finalize_forced_withdrawal(
         env,
         accounts.user,
         contracts.card_escrow,
@@ -144,7 +144,7 @@ unconstrained fn test_cannot_withdraw_during_timelock_fail() {
     );
 
     // prepare a withdrawal
-    card_escrow::prepare_withdrawal(
+    card_escrow::prepare_forced_withdrawal(
        env,
        accounts.user,
        contracts.card_escrow,
@@ -154,7 +154,7 @@ unconstrained fn test_cannot_withdraw_during_timelock_fail() {
     // NOTE: -2 because we increment the block after the withdrawal call
     cheatcodes::advance_blocks_by(CardEscrow::TIMELOCK_BLOCKS - 2);
     // try to withdraw
-    card_escrow::withdraw(
+    card_escrow::finalize_forced_withdrawal(
         env,
         accounts.user,
         contracts.card_escrow,
@@ -177,7 +177,7 @@ unconstrained fn test_cannot_finalize_withdraw_without_prepare_fail() {
     );
 
     // try to withdraw without preparing a withdrawal
-    card_escrow::withdraw(
+    card_escrow::finalize_forced_withdrawal(
         env,
         accounts.user,
         contracts.card_escrow,

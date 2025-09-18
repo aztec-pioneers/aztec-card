@@ -25,7 +25,7 @@ unconstrained fn test_overspend_limit_1_tx_fail() {
 
     // try to overspend from a single transaction
     let epoch = card_escrow::compute_epoch();
-    card_escrow::spend_from_escrow(
+    card_escrow::spend(
         env,
         accounts.operator,
         contracts.card_escrow,
@@ -51,7 +51,7 @@ unconstrained fn test_overspend_limit_2_tx_fail() {
 
     // spend exact allowed amount
     let epoch = card_escrow::compute_epoch();
-    card_escrow::spend_from_escrow(
+    card_escrow::spend(
         env,
         accounts.operator,
         contracts.card_escrow,
@@ -60,7 +60,7 @@ unconstrained fn test_overspend_limit_2_tx_fail() {
     );
 
     // try to overspend by a single unit
-    card_escrow::spend_from_escrow(
+    card_escrow::spend(
         env,
         accounts.operator,
         contracts.card_escrow,
@@ -85,7 +85,7 @@ unconstrained fn test_switch_spend_limit() {
     );
 
     // double spend limit
-    card_escrow::change_spend_limit(
+    card_escrow::prepare_forced_spend_limit_change(
         env,
         accounts.user,
         contracts.card_escrow,
@@ -96,7 +96,7 @@ unconstrained fn test_switch_spend_limit() {
     cheatcodes::advance_blocks_by(CardEscrow::TIMELOCK_BLOCKS);
 
     // finalize spend limit change
-    card_escrow::finalize_spend_limit_change(
+    card_escrow::finalize_forced_spend_limit_change(
         env,
         accounts.user,
         contracts.card_escrow
@@ -104,7 +104,7 @@ unconstrained fn test_switch_spend_limit() {
 
     // spend up to the new limit
     let epoch = card_escrow::compute_epoch();
-    card_escrow::spend_from_escrow(
+    card_escrow::spend(
         env,
         accounts.operator,
         contracts.card_escrow,
@@ -131,7 +131,7 @@ unconstrained fn test_switch_spend_limit_down_fail() {
     );
 
     // halve spend limit
-    card_escrow::change_spend_limit(
+    card_escrow::prepare_forced_spend_limit_change(
         env,
         accounts.user,
         contracts.card_escrow,
@@ -142,7 +142,7 @@ unconstrained fn test_switch_spend_limit_down_fail() {
     cheatcodes::advance_blocks_by(CardEscrow::TIMELOCK_BLOCKS);
 
     // finalize spend limit change
-    card_escrow::finalize_spend_limit_change(
+    card_escrow::finalize_forced_spend_limit_change(
         env,
         accounts.user,
         contracts.card_escrow
@@ -150,7 +150,7 @@ unconstrained fn test_switch_spend_limit_down_fail() {
 
     // try to spend original limit
     let epoch = card_escrow::compute_epoch();
-    card_escrow::spend_from_escrow(
+    card_escrow::spend(
         env,
         accounts.operator,
         contracts.card_escrow,
@@ -175,7 +175,7 @@ unconstrained fn test_spend_pending_limt_change() {
     );
 
     // halve spend limit
-    card_escrow::change_spend_limit(
+    card_escrow::prepare_forced_spend_limit_change(
         env,
         accounts.user,
         contracts.card_escrow,
@@ -184,7 +184,7 @@ unconstrained fn test_spend_pending_limt_change() {
 
     // spend up to the old limit
     let epoch = card_escrow::compute_epoch();
-    card_escrow::spend_from_escrow(
+    card_escrow::spend(
         env,
         accounts.operator,
         contracts.card_escrow,
@@ -195,7 +195,7 @@ unconstrained fn test_spend_pending_limt_change() {
     // advance past timelock
     cheatcodes::advance_blocks_by(CardEscrow::TIMELOCK_BLOCKS);
     // finalize spend limit change
-    card_escrow::finalize_spend_limit_change(
+    card_escrow::finalize_forced_spend_limit_change(
         env,
         accounts.user,
         contracts.card_escrow

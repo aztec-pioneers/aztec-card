@@ -25,7 +25,7 @@ unconstrained fn test_cannot_spend_wrong_epoch() {
 
     // try to spend from a future epoch
     let epoch = card_escrow::compute_epoch() + 1;
-    card_escrow::spend_from_escrow(
+    card_escrow::spend(
         env,
         accounts.operator,
         contracts.card_escrow,
@@ -51,7 +51,7 @@ unconstrained fn test_spend_more_than_available_fail() {
 
     // spend up to the limit for this epoch
     let mut epoch = card_escrow::compute_epoch();
-    card_escrow::spend_from_escrow(
+    card_escrow::spend(
         env,
         accounts.operator,
         contracts.card_escrow,
@@ -64,7 +64,7 @@ unconstrained fn test_spend_more_than_available_fail() {
     
     // try to spend the limit again
     epoch = epoch + 1;
-    card_escrow::spend_from_escrow(
+    card_escrow::spend(
         env,
         accounts.operator,
         contracts.card_escrow,

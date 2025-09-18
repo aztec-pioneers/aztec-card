@@ -110,9 +110,11 @@ pub contract CardEscrow {
         ));
     }
     
-    ////////////////////////////
-    ////////// PRIVATE /////////
-    ////////////////////////////
+    /////////////////////////////
+    ////////// PRIVATE //////////
+    /////////////////////////////
+
+    ////////// DEPOSIT //////////
 
     #[private]
     fn deposit(amount: u128, _nonce: Field) {
@@ -133,33 +135,71 @@ pub contract CardEscrow {
             )
             .call(&mut context);
     }
+    
+    ////////// SPEND //////////
 
     #[private]
-    fn prepare_withdrawal(amount: u128) {
+    fn spend(amount: u128, epoch: Field) {
         let caller = context.msg_sender();
         let self_address = context.this_address();
 
         // authorize this call
         let config = storage.config.get_note();
-        assert(config.user_address == caller, "Unauthorized: not card user!");
+        assert(config.operator_address == caller, "Unauthorized: not card operator!");
+        
+        // check epoch note has been initialized and create/ update it
+        let is_initialized = unsafe { _check_spend_epoch_initialized(epoch) };
+        let mut spend_amount_epoch_note = SpentAmountEpochNote::new(
+            context.this_address(),
+            amount,
+        );
+        if is_initialized {
+            let existing_note = storage.spend_epoch.at(epoch).get_note().note;
+            spend_amount_epoch_note.spent_amount += existing_note.spent_amount;
+        }
 
-        // update the timelock in mutable config
-        let mut timelocked_note = storage.timelocks_private.get_note().note;
-        timelocked_note.proposed_withdraw_amount = amount;
-        storage.timelocks_private.replace(timelocked_note).emit(encode_and_encrypt_note(
-            &mut context,
-            self_address,
-            self_address
-        ));
+        // get spend limit note
+        let spend_limit_note = _get_spend_limit_and_reemit(&mut context, storage.spend_limit);
 
-        // publicly enqueue the timelock
+        // check the spend amount against the limit
+        assert(
+            spend_limit_note.amount >= spend_amount_epoch_note.spent_amount,
+            "Spend limit exceeded!"
+        );
+
+        // store the note
+        storage
+            .spend_epoch
+            .at(epoch)
+            .initialize_or_replace(spend_amount_epoch_note)
+            .emit(encode_and_encrypt_note(
+                &mut context,
+                context.this_address(),
+                context.this_address()
+            ));
+
+        // transfer the tokens out
+        Token::at(config.token_address)
+            .transfer_private_to_private(
+                self_address,
+                caller,
+                amount,
+                0
+            )
+            .call(&mut context);
+        // enqueue a check to make sure the asserted epoch is correct
         CardEscrow::at(self_address)
-            ._set_timelock(false, true)
+            .check_epoch(epoch)
             .enqueue(&mut context);
+
+        // bump nonce to invalidate any pending signatures
+        _bump_nonce(&mut context, storage.escrow_nonce, self_address);
     }
 
+    ////////// WITHDRAW //////////
+
     #[private]
-    fn withdraw_by_signature(amount: u128, signature: [u8; 64]) {
+    fn withdraw(amount: u128, signature: [u8; 64]) {
         let caller = context.msg_sender();
         let self_address = context.this_address();
 
@@ -214,10 +254,40 @@ pub contract CardEscrow {
                 0
             )
             .call(&mut context);
+        
+        // bump nonce to invalidate any pending signatures
+        _bump_nonce(&mut context, storage.escrow_nonce, self_address);
     }
 
     #[private]
-    fn withdraw(amount: u128) {
+    fn prepare_forced_withdrawal(amount: u128) {
+        let caller = context.msg_sender();
+        let self_address = context.this_address();
+
+        // authorize this call
+        let config = storage.config.get_note();
+        assert(config.user_address == caller, "Unauthorized: not card user!");
+
+        // update the timelock in mutable config
+        let mut timelocked_note = storage.timelocks_private.get_note().note;
+        timelocked_note.proposed_withdraw_amount = amount;
+        storage.timelocks_private.replace(timelocked_note).emit(encode_and_encrypt_note(
+            &mut context,
+            self_address,
+            self_address
+        ));
+
+        // publicly enqueue the timelock
+        CardEscrow::at(self_address)
+            ._set_timelock(false, true)
+            .enqueue(&mut context);
+
+        // bump nonce to invalidate any pending signatures
+        _bump_nonce(&mut context, storage.escrow_nonce, self_address);
+    }
+
+    #[private]
+    fn finalize_forced_withdrawal(amount: u128) {
         let caller = context.msg_sender();
         let self_address = context.this_address();
 
@@ -264,66 +334,15 @@ pub contract CardEscrow {
         CardEscrow::at(self_address)
             ._elapse_timelock(false, true)
             .enqueue(&mut context);
+
+        // bump nonce to invalidate any pending signatures
+        _bump_nonce(&mut context, storage.escrow_nonce, self_address);
     }
 
+    ////////// SPEND LIMIT //////////
 
     #[private]
-    fn spend(amount: u128, epoch: Field) {
-        let caller = context.msg_sender();
-        let self_address = context.this_address();
-
-        // authorize this call
-        let config = storage.config.get_note();
-        assert(config.operator_address == caller, "Unauthorized: not card operator!");
-        
-        // check epoch note has been initialized and create/ update it
-        let is_initialized = unsafe { check_spend_epoch_initialized(epoch) };
-        let mut spend_amount_epoch_note = SpentAmountEpochNote::new(
-            context.this_address(),
-            amount,
-        );
-        if is_initialized {
-            let existing_note = storage.spend_epoch.at(epoch).get_note().note;
-            spend_amount_epoch_note.spent_amount += existing_note.spent_amount;
-        }
-
-        // get spend limit note
-        let spend_limit_note = get_spend_limit_and_reemit(&mut context, storage.spend_limit);
-
-        // check the spend amount against the limit
-        assert(
-            spend_limit_note.amount >= spend_amount_epoch_note.spent_amount,
-            "Spend limit exceeded!"
-        );
-
-        // store the note
-        storage
-            .spend_epoch
-            .at(epoch)
-            .initialize_or_replace(spend_amount_epoch_note)
-            .emit(encode_and_encrypt_note(
-                &mut context,
-                context.this_address(),
-                context.this_address()
-            ));
-
-        // transfer the tokens out
-        Token::at(config.token_address)
-            .transfer_private_to_private(
-                self_address,
-                caller,
-                amount,
-                0
-            )
-            .call(&mut context);
-        // enqueue a check to make sure the asserted epoch is correct
-        CardEscrow::at(self_address)
-            .check_epoch(epoch)
-            .enqueue(&mut context);
-    }
-
-    #[private]
-    fn change_spend_limit_by_signature(
+    fn change_spend_limit(
         new_spend_limit: u128,
         signature: [u8; 64]
     ) {
@@ -380,10 +399,13 @@ pub contract CardEscrow {
             self_address,
             self_address
         ));
+
+        // bump nonce to invalidate any pending signatures
+        _bump_nonce(&mut context, storage.escrow_nonce, self_address);
     }
 
     #[private]
-    fn change_spend_limit(new_spend_limit: u128) {
+    fn prepare_forced_spend_limit_change(new_spend_limit: u128) {
         let caller = context.msg_sender();
         let self_address = context.this_address();
 
@@ -407,7 +429,7 @@ pub contract CardEscrow {
     }
 
     #[private]
-    fn finalize_spend_limit_change() {
+    fn finalize_forced_spend_limit_change() {
         let caller = context.msg_sender();
         let self_address = context.this_address();
 
@@ -449,6 +471,8 @@ pub contract CardEscrow {
             .enqueue(&mut context);
     }
 
+    ////////// TIMELOCKS //////////
+
     #[private]
     fn cancel_timelocks(spend_limit: bool, withdraw: bool) {
         let caller = context.msg_sender();
@@ -476,10 +500,15 @@ pub contract CardEscrow {
         CardEscrow::at(self_address)
             ._cancel_timelock(spend_limit, withdraw)
             .enqueue(&mut context);
+
+        // bump nonce to invalidate any pending signatures
+        _bump_nonce(&mut context, storage.escrow_nonce, self_address);
     }
 
+    ////////// NONCE //////////
+
     #[private]
-    fn bump_escrow_nonce() {
+    fn bump_nonce() {
         let self_address = context.this_address();
         let caller = context.msg_sender();
         // authorize this call
@@ -487,13 +516,7 @@ pub contract CardEscrow {
         assert(config.operator_address == caller, "Unauthorized: not card user!");
 
         // bump the nonce
-        let mut escrow_nonce_note = storage.escrow_nonce.get_note().note;
-        escrow_nonce_note.nonce += 1;
-        storage.escrow_nonce.replace(escrow_nonce_note).emit(encode_and_encrypt_note(
-            &mut context,
-            self_address,
-            self_address
-        ));
+        _bump_nonce(&mut context, storage.escrow_nonce, self_address);
     }
 
     ////////////////////////////
@@ -567,11 +590,11 @@ pub contract CardEscrow {
     }
 
     ////////////////////////////
-    ///////// UTILITY //////////
+    ///////// LIBRARY //////////
     ////////////////////////////
 
     #[contract_library_method]
-    fn get_spend_limit_and_reemit(
+    fn _get_spend_limit_and_reemit(
         context: &mut PrivateContext,
         spend_limit_storage: PrivateMutable<SpendLimitNote, &mut PrivateContext>
     ) -> SpendLimitNote {
@@ -586,7 +609,7 @@ pub contract CardEscrow {
     }
 
     #[contract_library_method]
-    unconstrained fn check_spend_epoch_initialized(
+    unconstrained fn _check_spend_epoch_initialized(
         epoch: Field
     ) -> bool {
         // get the slot the spent amount epoch note would be stored at
@@ -600,6 +623,25 @@ pub contract CardEscrow {
         // check with oracle call if it exists and return
         unsafe { check_nullifier_exists(nullifier) }
     }
+
+    #[contract_library_method]
+    fn _bump_nonce(
+        context: &mut PrivateContext,
+        escrow_nonce_storage: PrivateMutable<EscrowNonceNote, &mut PrivateContext>,
+        self_address: AztecAddress,
+    ) {
+        let mut escrow_nonce_note = escrow_nonce_storage.get_note().note;
+        escrow_nonce_note.nonce += 1;
+        escrow_nonce_storage.replace(escrow_nonce_note).emit(encode_and_encrypt_note(
+            context,
+            self_address,
+            self_address
+        ));
+    }
+
+    ////////////////////////////
+    ///////// UTILITY //////////
+    ////////////////////////////
 
     #[utility]
     pub unconstrained fn get_nonce() -> Field {

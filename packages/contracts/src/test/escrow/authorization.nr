@@ -29,7 +29,7 @@ unconstrained fn test_cannot_change_spend_limit_not_user_fail() {
     let (env, accounts, contracts) = setup(true);
 
     // try to change spend limit from non-user account
-    card_escrow::change_spend_limit(
+    card_escrow::prepare_forced_spend_limit_change(
         env,
         accounts.external,
         contracts.card_escrow,
@@ -43,7 +43,7 @@ unconstrained fn test_cannot_finalize_spend_limit_change_not_user_or_operator_fa
     let (env, accounts, contracts) = setup(true);
 
     // prepare change spend limit
-    card_escrow::change_spend_limit(
+    card_escrow::prepare_forced_spend_limit_change(
         env,
         accounts.user,
         contracts.card_escrow,
@@ -54,7 +54,7 @@ unconstrained fn test_cannot_finalize_spend_limit_change_not_user_or_operator_fa
     cheatcodes::advance_blocks_by(CardEscrow::TIMELOCK_BLOCKS);
 
     // try to finalize spend limit change from non-user account
-    card_escrow::finalize_spend_limit_change(
+    card_escrow::finalize_forced_spend_limit_change(
         env,
         accounts.external,
         contracts.card_escrow
@@ -77,7 +77,7 @@ unconstrained fn test_cannot_prepare_withdraw_not_user_fail() {
     );
 
     // try to prepare a withdrawal from non-user account
-    card_escrow::prepare_withdrawal(
+    card_escrow::prepare_forced_withdrawal(
         env,
         accounts.external,
         contracts.card_escrow,
@@ -101,7 +101,7 @@ unconstrained fn test_cannot_withdraw_not_user_fail() {
     );
 
     // prepare a withdrawal 
-    card_escrow::prepare_withdrawal(
+    card_escrow::prepare_forced_withdrawal(
         env,
         accounts.user,
         contracts.card_escrow,
@@ -112,7 +112,7 @@ unconstrained fn test_cannot_withdraw_not_user_fail() {
     cheatcodes::advance_blocks_by(CardEscrow::TIMELOCK_BLOCKS);
 
     // try to withdraw from non-user account
-    card_escrow::withdraw(
+    card_escrow::finalize_forced_withdrawal(
         env,
         accounts.external,
         contracts.card_escrow,
@@ -152,7 +152,7 @@ unconstrained fn test_cannot_spend_not_operator_fail() {
 
     // try to spend from non-operator account
     let epoch = card_escrow::compute_epoch();
-    card_escrow::spend_from_escrow(
+    card_escrow::spend(
         env,
         accounts.external,
         contracts.card_escrow,

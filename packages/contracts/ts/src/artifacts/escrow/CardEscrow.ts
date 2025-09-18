@@ -166,17 +166,14 @@ SpentAmountEpochNote: {
   /** Type-safe wrappers for the public methods exposed by the contract. */
   public declare methods: {
     
-    /** bump_escrow_nonce() */
-    bump_escrow_nonce: (() => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
+    /** bump_nonce() */
+    bump_nonce: (() => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
 
     /** cancel_timelocks(spend_limit: boolean, withdraw: boolean) */
     cancel_timelocks: ((spend_limit: boolean, withdraw: boolean) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
 
-    /** change_spend_limit(new_spend_limit: integer) */
-    change_spend_limit: ((new_spend_limit: (bigint | number)) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
-
-    /** change_spend_limit_by_signature(new_spend_limit: integer, signature: array) */
-    change_spend_limit_by_signature: ((new_spend_limit: (bigint | number), signature: (bigint | number)[]) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
+    /** change_spend_limit(new_spend_limit: integer, signature: array) */
+    change_spend_limit: ((new_spend_limit: (bigint | number), signature: (bigint | number)[]) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
 
     /** constructor(token_address: struct, operator_address: struct, operator_pubkey_x: field, operator_pubkey_y: field, spend_limit: integer) */
     constructor: ((token_address: AztecAddressLike, operator_address: AztecAddressLike, operator_pubkey_x: FieldLike, operator_pubkey_y: FieldLike, spend_limit: (bigint | number)) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
@@ -184,8 +181,11 @@ SpentAmountEpochNote: {
     /** deposit(amount: integer, _nonce: field) */
     deposit: ((amount: (bigint | number), _nonce: FieldLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
 
-    /** finalize_spend_limit_change() */
-    finalize_spend_limit_change: (() => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
+    /** finalize_forced_spend_limit_change() */
+    finalize_forced_spend_limit_change: (() => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
+
+    /** finalize_forced_withdrawal(amount: integer) */
+    finalize_forced_withdrawal: ((amount: (bigint | number)) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
 
     /** get_config() */
     get_config: (() => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
@@ -202,8 +202,11 @@ SpentAmountEpochNote: {
     /** get_timelocks_public() */
     get_timelocks_public: (() => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
 
-    /** prepare_withdrawal(amount: integer) */
-    prepare_withdrawal: ((amount: (bigint | number)) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
+    /** prepare_forced_spend_limit_change(new_spend_limit: integer) */
+    prepare_forced_spend_limit_change: ((new_spend_limit: (bigint | number)) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
+
+    /** prepare_forced_withdrawal(amount: integer) */
+    prepare_forced_withdrawal: ((amount: (bigint | number)) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
 
     /** process_message(message_ciphertext: struct, message_context: struct) */
     process_message: ((message_ciphertext: FieldLike[], message_context: { tx_hash: FieldLike, unique_note_hashes_in_tx: FieldLike[], first_nullifier_in_tx: FieldLike, recipient: AztecAddressLike }) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
@@ -217,11 +220,8 @@ SpentAmountEpochNote: {
     /** sync_private_state() */
     sync_private_state: (() => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
 
-    /** withdraw(amount: integer) */
-    withdraw: ((amount: (bigint | number)) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
-
-    /** withdraw_by_signature(amount: integer, signature: array) */
-    withdraw_by_signature: ((amount: (bigint | number), signature: (bigint | number)[]) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
+    /** withdraw(amount: integer, signature: array) */
+    withdraw: ((amount: (bigint | number), signature: (bigint | number)[]) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
   };
 
   

@@ -16,7 +16,7 @@ unconstrained fn test_cannot_change_spending_limit_during_timelock_fail() {
     let (env, accounts, contracts) = setup(true);
    
     // change spend limit
-    card_escrow::change_spend_limit(
+    card_escrow::prepare_forced_spend_limit_change(
         env,
         accounts.user,
         contracts.card_escrow,
@@ -25,7 +25,7 @@ unconstrained fn test_cannot_change_spending_limit_during_timelock_fail() {
     // advance to block before timelock is over
     cheatcodes::advance_blocks_by(CardEscrow::TIMELOCK_BLOCKS - 2);
     // try to finalize spend limit change
-    card_escrow::finalize_spend_limit_change(
+    card_escrow::finalize_forced_spend_limit_change(
         env,
         accounts.user,
         contracts.card_escrow
@@ -38,7 +38,7 @@ unconstrained fn test_cannot_finalize_spend_limit_change_without_prepare_fail() 
     let (env, accounts, contracts) = setup(true);
 
     // try to finalize spend limit change without preparing a change
-    card_escrow::finalize_spend_limit_change(
+    card_escrow::finalize_forced_spend_limit_change(
         env,
         accounts.user,
         contracts.card_escrow
@@ -62,7 +62,7 @@ unconstrained fn test_card_escrow_cancel_timelocks() {
 
     // schedule a withdrawal
     let start_block = get_block_number();
-    card_escrow::prepare_withdrawal(
+    card_escrow::prepare_forced_withdrawal(
        env,
        accounts.user,
        contracts.card_escrow,
@@ -70,7 +70,7 @@ unconstrained fn test_card_escrow_cancel_timelocks() {
     );
 
     // schedule a spend limit change
-    card_escrow::change_spend_limit(
+    card_escrow::prepare_forced_spend_limit_change(
         env,
         accounts.user,
         contracts.card_escrow,

@@ -109,7 +109,7 @@ describe("Private Transfer Demo Test", () => {
         await escrow
             .withWallet(user)
             .methods
-            .change_spend_limit_by_signature(spendLimitChange, signature)
+            .change_spend_limit(spendLimitChange, signature)
             .send()
             .wait();
         
@@ -139,10 +139,10 @@ describe("Private Transfer Demo Test", () => {
         await escrow
             .withWallet(user)
             .methods
-            .withdraw_by_signature(withdrawAmount, withdrawSignature)
+            .withdraw(withdrawAmount, withdrawSignature)
             .send()
             .wait();
-            
+
         // check balances after withdrawal
         expect(
             expectBalancePrivate(usdc, user.getAddress(), MINT_AMOUNT - withdrawAmount)

@@ -21,6 +21,10 @@ use crate::{
     test::utils::token::private_transfer_authwit
 };
 
+// NOTE: ALL OF THESE FUNCTIONS WRAP FUNCTIONS IN `CardEscrow`
+//       TO AUTOMATE IMPERSONATION AND BLOCK ADVANCEMENT. CODE 
+//       COMMENTING IS LEFT TO THAT FILE AS IT IS REDUNDANT HERE.
+
 pub unconstrained fn compute_epoch() -> Field {
     get_timestamp() as Field / 86400
 }
@@ -58,7 +62,7 @@ pub unconstrained fn deposit(
     env.advance_block_by(1);
 }
 
-pub unconstrained fn spend_from_escrow(
+pub unconstrained fn spend(
     env: &mut TestEnvironment,
     operator_address: AztecAddress,
     card_escrow_address: AztecAddress,
@@ -72,7 +76,7 @@ pub unconstrained fn spend_from_escrow(
     env.advance_block_by(1);
 }
 
-pub unconstrained fn prepare_withdrawal(
+pub unconstrained fn prepare_forced_withdrawal(
     env: &mut TestEnvironment,
     user_address: AztecAddress,
     card_escrow_address: AztecAddress,
@@ -80,12 +84,12 @@ pub unconstrained fn prepare_withdrawal(
 ) {
     env.impersonate(user_address);
     CardEscrow::at(card_escrow_address)
-        .prepare_withdrawal(amount)
+        .prepare_forced_withdrawal(amount)
         .call(&mut env.private());
     env.advance_block_by(1);
 }
 
-pub unconstrained fn withdraw(
+pub unconstrained fn finalize_forced_withdrawal(
     env: &mut TestEnvironment,
     user_address: AztecAddress,
     card_escrow_address: AztecAddress,
@@ -93,12 +97,12 @@ pub unconstrained fn withdraw(
 ) {
     env.impersonate(user_address);
     CardEscrow::at(card_escrow_address)
-        .withdraw(amount)
+        .finalize_forced_withdrawal(amount)
         .call(&mut env.private());
     env.advance_block_by(1);
 }
 
-pub unconstrained fn change_spend_limit(
+pub unconstrained fn prepare_forced_spend_limit_change(
     env: &mut TestEnvironment,
     user_address: AztecAddress,
     card_escrow_address: AztecAddress,
@@ -106,19 +110,19 @@ pub unconstrained fn change_spend_limit(
 ) {
     env.impersonate(user_address);
     CardEscrow::at(card_escrow_address)
-        .change_spend_limit(new_spend_limit)
+        .prepare_forced_spend_limit_change(new_spend_limit)
         .call(&mut env.private());
     env.advance_block_by(1);
 }
 
-pub unconstrained fn finalize_spend_limit_change(
+pub unconstrained fn finalize_forced_spend_limit_change(
     env: &mut TestEnvironment,
     user_address: AztecAddress,
     card_escrow_address: AztecAddress
 ) {
     env.impersonate(user_address);
     CardEscrow::at(card_escrow_address)
-        .finalize_spend_limit_change()
+        .finalize_forced_spend_limit_change()
         .call(&mut env.private());
     env.advance_block_by(1);
 }

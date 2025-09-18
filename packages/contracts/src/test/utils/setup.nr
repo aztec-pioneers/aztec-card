@@ -92,6 +92,13 @@ pub unconstrained fn setup(mint: bool) -> (
     (&mut env, test_accounts, test_contracts)
 }
 
+/**
+ * Sets up account contracts in the TXE and returns their addresses for use in tests
+ *
+ * @param NUM_ACCOUNTS - number of accounts to setup
+ * @param env - the TXE test environment context
+ * @return array of account addresses
+ */
 pub unconstrained fn setup_accounts<let NUM_ACCOUNTS: u32>(
     env: &mut TestEnvironment
 ) -> [AztecAddress; NUM_ACCOUNTS] {
@@ -103,6 +110,16 @@ pub unconstrained fn setup_accounts<let NUM_ACCOUNTS: u32>(
     accounts
 }
 
+/**
+ * Deploys a token contract with the minter constructor in the TXE and returns its address
+ *
+ * @param env - the TXE test environment context
+ * @param owner - the deployer & minter of the token contract
+ * @param name - the name of the token
+ * @param symbol - the symbol of the token
+ * @param decimals - the number of decimals for the token
+ * @return the address of the deployed token contract
+ */
 pub unconstrained fn deploy_token_contract(
     env: &mut TestEnvironment,
     owner: AztecAddress,
@@ -126,13 +143,25 @@ pub unconstrained fn deploy_token_contract(
     contract_instance.to_address()
 }
 
+/**
+ * Deploys a card escrow contract in the TXE and returns its address and secret
+ * NOTE: operator schnorr key is 0'd since we cannot generate signatures in TXE
+ *       and thus never test this functionality in the TXE!
+ *
+ * @param env - the TXE test environment context
+ * @param user - the user who deposits funds and holds the spending card (and deployer)
+ * @param token - the address of the token to be held in escrow
+ * @param operator - the operator of the card who debits when the user spends from the card
+ * @return
+ *        - the address of the deployed card escrow contract
+ *        - the escrow secret
+ */
 pub unconstrained fn deploy_card_escrow_contract(
     env: &mut TestEnvironment,
     user: AztecAddress,
     token: AztecAddress,
     operator: AztecAddress,
     spend_limit: u128
-    
 ) -> (AztecAddress, Field) {
     // setup keys for escrow account
     let escrow_secret = unsafe { random() };

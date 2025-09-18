@@ -45,7 +45,7 @@ unconstrained fn test_e2e() {
 
     // spend from escrow twice in same epoch
     let mut epoch = card_escrow::compute_epoch();
-    card_escrow::spend_from_escrow(
+    card_escrow::spend(
         env,
         accounts.operator,
         contracts.card_escrow,
@@ -54,7 +54,7 @@ unconstrained fn test_e2e() {
     );
     expect_private_balance(contracts.usdc, contracts.card_escrow, USDC_MINT_AMOUNT - (INITIAL_SPEND_LIMIT / 2));
     expect_private_balance(contracts.usdc, accounts.operator, INITIAL_SPEND_LIMIT / 2);
-    card_escrow::spend_from_escrow(
+    card_escrow::spend(
         env,
         accounts.operator,
         contracts.card_escrow,
@@ -69,7 +69,7 @@ unconstrained fn test_e2e() {
     assert(card_escrow::compute_epoch() == epoch + 1, "Epoch should have advanced by 1");
     epoch = epoch + 1;
     // spend from escrow in new epoch
-    card_escrow::spend_from_escrow(
+    card_escrow::spend(
         env,
         accounts.operator,
         contracts.card_escrow,
@@ -80,7 +80,7 @@ unconstrained fn test_e2e() {
     expect_private_balance(contracts.usdc, accounts.operator, INITIAL_SPEND_LIMIT * 2);
 
     // withdraw from escrow
-    card_escrow::prepare_withdrawal(
+    card_escrow::prepare_forced_withdrawal(
         env,
         accounts.user,
         contracts.card_escrow,
@@ -88,7 +88,7 @@ unconstrained fn test_e2e() {
     );
     // advance past timelock 
     cheatcodes::advance_blocks_by(CardEscrow::TIMELOCK_BLOCKS);
-    card_escrow::withdraw(
+    card_escrow::finalize_forced_withdrawal(
         env,
         accounts.user,
         contracts.card_escrow,

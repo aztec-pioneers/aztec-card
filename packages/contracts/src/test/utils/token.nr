@@ -9,6 +9,15 @@ use aztec::{
     }
 };
 
+/**
+ * Mints tokens privately
+ *
+ * @param env - the TXE test environment context
+ * @param token_address - the address of the token contract being called
+ * @param minter - the address with minter role
+ * @param recipient - the address to receive the minted tokens
+ * @param amount - the amount of tokens to mint
+ */
 pub unconstrained fn mint_to_private(
     env: &mut TestEnvironment,
     token_address: AztecAddress,
@@ -24,6 +33,13 @@ pub unconstrained fn mint_to_private(
     env.advance_block_by(1);
 }
 
+/**
+ * Gets the private token balance of an account
+ *
+ * @param token_address - the address of the token contract being checked for balance
+ * @param account_address - the address to check the balance of
+ * @return the private token balance of the account
+ */
 pub unconstrained fn get_balance_private(
     token_address: AztecAddress,
     account_address: AztecAddress,
@@ -36,6 +52,12 @@ pub unconstrained fn get_balance_private(
     amount
 }
 
+/**
+ * Shorthand for asserting the private balance of an account
+ * @param token_address - the address of the token contract being checked for balance
+ * @param account_address - the address to check the balance of
+ * @param expected_balance - the expected private token balance of the account
+ */
 pub unconstrained fn expect_private_balance(
     token_address: AztecAddress,
     account_address: AztecAddress,
