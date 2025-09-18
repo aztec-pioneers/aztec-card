@@ -70,14 +70,14 @@ export class CardEscrowContract extends ContractBase {
   /**
    * Creates a tx to deploy a new instance of this contract.
    */
-  public static deploy(wallet: Wallet, token_address: AztecAddressLike, operator_address: AztecAddressLike, spend_limit: (bigint | number)) {
+  public static deploy(wallet: Wallet, token_address: AztecAddressLike, operator_address: AztecAddressLike, operator_pubkey_x: FieldLike, operator_pubkey_y: FieldLike, spend_limit: (bigint | number)) {
     return new DeployMethod<CardEscrowContract>(PublicKeys.default(), wallet, CardEscrowContractArtifact, CardEscrowContract.at, Array.from(arguments).slice(1));
   }
 
   /**
    * Creates a tx to deploy a new instance of this contract using the specified public keys hash to derive the address.
    */
-  public static deployWithPublicKeys(publicKeys: PublicKeys, wallet: Wallet, token_address: AztecAddressLike, operator_address: AztecAddressLike, spend_limit: (bigint | number)) {
+  public static deployWithPublicKeys(publicKeys: PublicKeys, wallet: Wallet, token_address: AztecAddressLike, operator_address: AztecAddressLike, operator_pubkey_x: FieldLike, operator_pubkey_y: FieldLike, spend_limit: (bigint | number)) {
     return new DeployMethod<CardEscrowContract>(publicKeys, wallet, CardEscrowContractArtifact, CardEscrowContract.at, Array.from(arguments).slice(2));
   }
 
@@ -115,53 +115,71 @@ export class CardEscrowContract extends ContractBase {
   }
   
 
-  public static get storage(): ContractStorageLayout<'config' | 'timelocks' | 'timelocks_private' | 'spend_epoch'> {
+  public static get storage(): ContractStorageLayout<'config' | 'escrow_nonce' | 'spend_limit' | 'timelocks' | 'timelocks_private' | 'spend_epoch'> {
       return {
         config: {
       slot: new Fr(1n),
     },
-timelocks: {
+escrow_nonce: {
       slot: new Fr(2n),
     },
-timelocks_private: {
+spend_limit: {
+      slot: new Fr(3n),
+    },
+timelocks: {
       slot: new Fr(4n),
     },
+timelocks_private: {
+      slot: new Fr(6n),
+    },
 spend_epoch: {
-      slot: new Fr(5n),
+      slot: new Fr(7n),
     }
-      } as ContractStorageLayout<'config' | 'timelocks' | 'timelocks_private' | 'spend_epoch'>;
+      } as ContractStorageLayout<'config' | 'escrow_nonce' | 'spend_limit' | 'timelocks' | 'timelocks_private' | 'spend_epoch'>;
     }
     
 
-  public static get notes(): ContractNotes<'UintNote' | 'ConfigNote' | 'SpentAmountEpochNote' | 'TimelockedNote'> {
+  public static get notes(): ContractNotes<'UintNote' | 'TimelockedNote' | 'ConfigNote' | 'SpendLimitNote' | 'EscrowNonceNote' | 'SpentAmountEpochNote'> {
     return {
       UintNote: {
           id: new NoteSelector(0),
         },
+TimelockedNote: {
+          id: new NoteSelector(5),
+        },
 ConfigNote: {
           id: new NoteSelector(1),
         },
-SpentAmountEpochNote: {
+SpendLimitNote: {
+          id: new NoteSelector(3),
+        },
+EscrowNonceNote: {
           id: new NoteSelector(2),
         },
-TimelockedNote: {
-          id: new NoteSelector(3),
+SpentAmountEpochNote: {
+          id: new NoteSelector(4),
         }
-    } as ContractNotes<'UintNote' | 'ConfigNote' | 'SpentAmountEpochNote' | 'TimelockedNote'>;
+    } as ContractNotes<'UintNote' | 'TimelockedNote' | 'ConfigNote' | 'SpendLimitNote' | 'EscrowNonceNote' | 'SpentAmountEpochNote'>;
   }
   
 
   /** Type-safe wrappers for the public methods exposed by the contract. */
   public declare methods: {
     
+    /** bump_escrow_nonce() */
+    bump_escrow_nonce: (() => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
+
     /** cancel_timelocks(spend_limit: boolean, withdraw: boolean) */
     cancel_timelocks: ((spend_limit: boolean, withdraw: boolean) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
 
     /** change_spend_limit(new_spend_limit: integer) */
     change_spend_limit: ((new_spend_limit: (bigint | number)) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
 
-    /** constructor(token_address: struct, operator_address: struct, spend_limit: integer) */
-    constructor: ((token_address: AztecAddressLike, operator_address: AztecAddressLike, spend_limit: (bigint | number)) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
+    /** change_spend_limit_by_signature(new_spend_limit: integer, signature: array) */
+    change_spend_limit_by_signature: ((new_spend_limit: (bigint | number), signature: (bigint | number)[]) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
+
+    /** constructor(token_address: struct, operator_address: struct, operator_pubkey_x: field, operator_pubkey_y: field, spend_limit: integer) */
+    constructor: ((token_address: AztecAddressLike, operator_address: AztecAddressLike, operator_pubkey_x: FieldLike, operator_pubkey_y: FieldLike, spend_limit: (bigint | number)) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
 
     /** deposit(amount: integer, _nonce: field) */
     deposit: ((amount: (bigint | number), _nonce: FieldLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
@@ -171,6 +189,12 @@ TimelockedNote: {
 
     /** get_config() */
     get_config: (() => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
+
+    /** get_nonce() */
+    get_nonce: (() => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
+
+    /** get_spend_limit() */
+    get_spend_limit: (() => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
 
     /** get_timelocks_private() */
     get_timelocks_private: (() => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
@@ -195,6 +219,9 @@ TimelockedNote: {
 
     /** withdraw(amount: integer) */
     withdraw: ((amount: (bigint | number)) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
+
+    /** withdraw_by_signature(amount: integer, signature: array) */
+    withdraw_by_signature: ((amount: (bigint | number), signature: (bigint | number)[]) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
   };
 
   

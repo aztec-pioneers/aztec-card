@@ -38,6 +38,7 @@ export async function deployEscrowContract(
     deployer: AccountWallet,
     tokenAddress: AztecAddress,
     operatorAddress: AztecAddress,
+    operatorSchnorrPubkey: { x: bigint, y: bigint },
     spendLimit: bigint,
     opts: { deploy?: DeployOptions, wait?: WaitOpts } = {}
 ): Promise<{ contract: CardEscrowContract, secretKey: Fr }> {
@@ -50,7 +51,13 @@ export async function deployEscrowContract(
         contractPublicKeys,
         deployer,
         CardEscrowContractArtifact,
-        [tokenAddress, operatorAddress, spendLimit],
+        [
+            tokenAddress,
+            operatorAddress,
+            operatorSchnorrPubkey.x,
+            operatorSchnorrPubkey.y,
+            spendLimit
+        ],
     );
 
     // add contract decryption keys to PXE

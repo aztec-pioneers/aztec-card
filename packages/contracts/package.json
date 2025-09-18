@@ -7,6 +7,7 @@
       "@aztec/accounts": "catalog:",
       "@aztec/ethereum": "catalog:",
       "@aztec/entrypoints": "catalog:",
+      "@aztec/foundation": "catalog:",
       "@aztec/stdlib": "catalog:",
       "@aztec/noir-contracts.js": "catalog:",
       "jest": "catalog:"
@@ -22,6 +23,8 @@
   "scripts": {
     "test": "bun run test:nr && bun test",
     "test:nr": "LOG_LEVEL=debug aztec test",
+    "test:js:multi-pxe": "bun test ts/test/multipxe.test.ts",
+    "test:js:e2e": "bun test ts/test/e2e.test.ts",
     "deploy-token": "bun run ./scripts/deploy_token.ts",
     "compile": "aztec-nargo compile",
     "codegen": "aztec codegen target --outdir artifacts",

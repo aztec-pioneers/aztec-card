@@ -602,6 +602,11 @@ pub contract CardEscrow {
     }
 
     #[utility]
+    pub unconstrained fn get_nonce() -> Field {
+        storage.escrow_nonce.view_note().nonce
+    }
+
+    #[utility]
     pub unconstrained fn get_config() -> ConfigNote {
         storage.config.view_note()
     }
