@@ -44,3 +44,10 @@ export const buildSignedEscrowMessage = async (
     const signature = await schnorr.constructSignature(message, signingKey);
     return signature.toBuffer();
 }
+
+export const computeEpoch = async (pxe: PXE): Promise<bigint> => {
+    const block = await pxe.getBlock(await pxe.getBlockNumber());
+    if (!block) throw new Error("No block found");
+    const timestamp = block.header.globalVariables.timestamp;
+    return timestamp / 86400n;
+}

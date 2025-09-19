@@ -11,7 +11,7 @@ import {
     SendMethodOptions,
     WaitOpts,
 } from "@aztec/aztec.js";
-import { computePartialAddress, ContractInstanceWithAddress } from "@aztec/stdlib/contract";
+import { computeContractAddressFromInstance, computePartialAddress, ContractInstanceWithAddress, getContractClassFromArtifact } from "@aztec/stdlib/contract";
 import {
     CardEscrowContract,
     CardEscrowContractArtifact,
@@ -161,6 +161,8 @@ export const getTokenContract = async (
     aztecRpcUrl: string = "http://localhost:8080"
 ): Promise<TokenContract> => {
     const node = createAztecNodeClient(aztecRpcUrl);
+   
+
     const contractInstance = await node.getContract(tokenAddress);
     if (!contractInstance) {
         throw new Error(`No instance for token contract at ${tokenAddress.toString()} found!`);
@@ -193,3 +195,18 @@ export const getEscrowContract = async (
     await escrow.methods.sync_private_state().simulate();
     return escrow;
 };
+
+/**
+ * Validates that a claimed contract address matches the address computed from the contract instance
+ *
+ * @param claimedAddress - The address claimed by the user
+ * @param instance - The contract instance to validate
+ * @returns - True if the addresses match, false otherwise
+ */
+export const validateContractAddress = async (
+  claimedAddress: AztecAddress,
+  instance: ContractInstanceWithAddress,
+): Promise<boolean> => {
+  const computed = await computeContractAddressFromInstance(instance);
+  return computed.equals(claimedAddress);  
+}

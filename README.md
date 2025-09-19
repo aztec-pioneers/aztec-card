@@ -1,15 +1,14 @@
 # aztec-card
 
-To install dependencies:
+## Installation
 
-```bash
-bun install
-```
+See [contracts readme for use](./packages/contracts/README.md)
 
-To run:
-
-```bash
-bun run index.ts
-```
-
-This project was created using `bun init` in bun v1.1.22. [Bun](https://bun.sh) is a fast all-in-one JavaScript runtime.
+## Docs
+* [Escrow Setup](./docs/escrow_setup.md)
+* [Depositing](./docs/deposits.md)
+* [Spending](./docs/spends.md)
+* [Signed Operations](./docs/signed_operations.md)
+* [Timelocks](./docs/timelocks.md)
+* [Withdrawals](./docs/withdrawals.md)
+* [Changing Spending Limits](./docs/spend_limit_change.md)
